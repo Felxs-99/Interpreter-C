@@ -1,0 +1,12 @@
+# Emacs files
+.clang-format
+.dir-locals.el
+
+# Cache files, folders
+/.cache/
+
+# Cmake
+CMakeLists.txt
+
+# Build folder
+/build/
