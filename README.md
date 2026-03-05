@@ -1,4 +1,4 @@
-# C-Arithmetic: A Simple Expression Interpreter
+# Interpreter-C: A Simple Expression Interpreter
 
 A lightweight, handwritten interpreter built in C to explore the fundamentals of Lexical Analysis and Parsing. 
 
