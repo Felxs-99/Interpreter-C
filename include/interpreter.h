@@ -37,10 +37,6 @@ typedef struct
 
 
 int expr(char* buffer, size_t lenght);
-void get_next_token(Interpreter* interpret);
-uint8_t convert_char(char character);
-bool is_digit(char character);
-bool eat(token_types token, Interpreter* interprete);
 
 
 #endif // INTERPRETER_H_

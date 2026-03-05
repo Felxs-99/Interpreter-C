@@ -2,9 +2,11 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+static void get_next_token(Interpreter* interpret);
+static uint8_t convert_char(char character);
+static bool is_digit(char character);
+static bool eat(token_types token, Interpreter* interprete);
 static int multiple_digit_number(int number, int digit_to_add);
-static int calc_last_two_numbers(int first_number, int second_number,
-                                 token_types operator);
 
 // Evaluate the expression
 int expr(char* buffer, size_t length)
@@ -22,6 +24,7 @@ int expr(char* buffer, size_t length)
 
     while (true)
     {
+        // Check if the lexer found a error
         if (interpret.error_found)
         {
             printf("Token Error occured!\n");
@@ -30,24 +33,10 @@ int expr(char* buffer, size_t length)
 
         new_token = interpret.current_token;
 
+        // Break out of the loop, if the end of the input was reached
         if (new_token.type == EOL)
         {
             break;
-        }
-        else if (new_token.type == SPACE)
-        {
-            if (last_token_type == NONE)
-            {
-                printf("Space at the beginning is not allowed!\n");
-                break;
-            }
-
-            if (!eat(SPACE, &interpret))
-            {
-                printf("Operator Error occured!\n");
-                break;
-            }
-            continue;
         }
         else if (last_token_type == INT)
         {
@@ -68,8 +57,6 @@ int expr(char* buffer, size_t length)
         }
         else if (last_token_type == PLUS || last_token_type == MINUS)
         {
-            // After an operator, we expect an INT and do the math
-            token_types op = last_token_type;
 
             if (!eat(INT, &interpret))
             {
@@ -78,7 +65,7 @@ int expr(char* buffer, size_t length)
             }
             else
             {
-                if (op == PLUS)
+                if (last_token_type == PLUS)
                 {
                     result += new_token.value;
                 }
@@ -88,18 +75,31 @@ int expr(char* buffer, size_t length)
                 }
             }
         }
+        // State for the very first entry
         else if (last_token_type == NONE)
         {
-            // Initial state: we expect the first number
-            if (!eat(INT, &interpret))
+            // Allowed types are a number, plus or minus
+            if (new_token.type == INT)
             {
-                printf("Integer needed Error occured!\n");
-                break;
+                result = new_token.value;
+                eat(INT, &interpret);
+            }
+            else if (new_token.type == PLUS)
+            {
+                // A leading + does nothing to the value (0 + 7)
+                eat(PLUS, &interpret);
+            }
+            else if (new_token.type == MINUS)
+            {
+                // A leading - means (0 - 7)
+                eat(MINUS, &interpret);
             }
             else
             {
-                result = new_token.value;
+                printf("Error: Expression must start with a number or sign\n");
+                break;
             }
+            // Use 'continue' so we don't overwrite last_token_type at the bottom yet
         }
         else
         {
@@ -114,10 +114,11 @@ int expr(char* buffer, size_t length)
 }
 
 // Create the token for the next character
-void get_next_token(Interpreter* interpret)
+static void get_next_token(Interpreter* interpret)
 {
     Token token = {0};
-
+    bool is_combined = false;
+    token_types last_token = NONE;
     // Return a EOL token when the last character of the buffer is reached \0 or \n
     if (interpret->position > (interpret->length - 1))
     {
@@ -137,16 +138,27 @@ void get_next_token(Interpreter* interpret)
             }
             char current_char = interpret->buffer[interpret->position];
 
+            if (is_digit(current_char))
+            {
+                token.type = INT;
+                token.value = multiple_digit_number(token.value,  convert_char(current_char));
+                interpret->position += 1;
+                last_token = INT;
+                continue;
+            }
+            else
+            {
+                if (last_token == INT)
+                {
+                    break;
+                }
+
+            }
+            
             if (current_char == ' ')
             {
                 interpret->position += 1;
                 continue;
-            }
-            else  if (is_digit(current_char))
-            {
-                token.type = INT;
-                token.value = convert_char(current_char);
-                interpret->position += 1;
             }
 
             else if (current_char == '+')
@@ -173,12 +185,12 @@ void get_next_token(Interpreter* interpret)
             break;
         }
 
-        }
+    }
 
     interpret->current_token = token;
 }
 
-bool eat(token_types token, Interpreter* interprete)
+static bool eat(token_types token, Interpreter* interprete)
 {
     if (interprete->current_token.type == token)
     {
@@ -192,7 +204,7 @@ bool eat(token_types token, Interpreter* interprete)
  * Check if the character is a digit (0 - 9)
  * Returns true, if it is a digit, false if not
  */
-bool is_digit(char character)
+static bool is_digit(char character)
 {
     if ((character >= '0') && (character <= '9'))
     {
@@ -206,7 +218,7 @@ bool is_digit(char character)
 }
 
 // Converts a single digit into a uint8_t number
-uint8_t convert_char(char character)
+static uint8_t convert_char(char character)
 {
     return (uint8_t) (character - '0');
 }
