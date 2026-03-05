@@ -10,3 +10,6 @@ CMakeLists.txt
 
 # Build folder
 /build/
+
+# Readme preview files
+README.html

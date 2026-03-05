@@ -21,7 +21,8 @@ int main()
             if (strchr(input_buffer, '\n') == NULL)
             {
                 // Ignore the line with too much input characters
-                while ((c = getchar()) != '\n' && c != EOF);
+                while ((c = g
+                        etchar()) != '\n' && c != EOF);
                 continue;
             }
         }
