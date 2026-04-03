@@ -14,6 +14,8 @@ typedef enum
     INT,
     PLUS,
     MINUS,
+    MUL,
+    DIV,
     EOL,
     SPACE,
     ERROR,

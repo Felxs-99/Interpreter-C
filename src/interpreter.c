@@ -1,230 +1,231 @@
 #include "interpreter.h"
 #include <stdbool.h>
 #include <stdio.h>
+#include <ctype.h>
 
 static void get_next_token(Interpreter* interpret);
 static uint8_t convert_char(char character);
-static bool is_digit(char character);
-static bool eat(token_types token, Interpreter* interprete);
+static bool eat(token_types token, Interpreter *interprete);
+static int factor(Interpreter *interpret);
+static int term(Interpreter *interpret);
 static int multiple_digit_number(int number, int digit_to_add);
+static void emit_single_char_token(Interpreter *interpret, token_types type,
+                                   int value);
+static bool is_additive_op(token_types type);
+static bool is_multiplicative_op(token_types type);
 
+// Interpreter
 // Evaluate the expression
 int expr(char* buffer, size_t length)
 {
-    Interpreter interpret = {0};
-    interpret.buffer = buffer;
-    interpret.length = length;
-    interpret.position = 0;
-    get_next_token(&interpret);
+  Interpreter interpret = {0};
+  interpret.buffer = buffer;
+  interpret.length = length;
+  interpret.position = 0;
+  get_next_token(&interpret);
 
-    int result = 0;
-    token_types last_token_type = NONE;
+  int result = term(&interpret);
+  Token token = {0};
 
-    Token new_token;
+  while (is_additive_op(interpret.current_token.type))
+  {
+    // Stop evaluating if a syntax error was found in factor()
+    if (interpret.error_found) break;
+    token = interpret.current_token;
 
-    while (true)
+    if (token.type == PLUS)
     {
-        // Check if the lexer found a error
-        if (interpret.error_found)
-        {
-            printf("Token Error occured!\n");
-            break;
-        }
-
-        new_token = interpret.current_token;
-
-        // Break out of the loop, if the end of the input was reached
-        if (new_token.type == EOL)
-        {
-            break;
-        }
-        else if (last_token_type == INT)
-        {
-            // After an INT, we expect an operator
-            if (new_token.type == PLUS)
-            {
-                eat(PLUS, &interpret);
-            }
-            else if (new_token.type == MINUS)
-            {
-                eat(MINUS, &interpret);
-            }
-            else
-            {
-                printf("Operator Error: Expected + or -\n");
-                break;
-            }
-        }
-        else if (last_token_type == PLUS || last_token_type == MINUS)
-        {
-
-            if (!eat(INT, &interpret))
-            {
-                printf("Integer Error occured!\n");
-                break;
-            }
-            else
-            {
-                if (last_token_type == PLUS)
-                {
-                    result += new_token.value;
-                }
-                else
-                {
-                    result -= new_token.value;
-                }
-            }
-        }
-        // State for the very first entry
-        else if (last_token_type == NONE)
-        {
-            // Allowed types are a number, plus or minus
-            if (new_token.type == INT)
-            {
-                result = new_token.value;
-                eat(INT, &interpret);
-            }
-            else if (new_token.type == PLUS)
-            {
-                // A leading + does nothing to the value (0 + 7)
-                eat(PLUS, &interpret);
-            }
-            else if (new_token.type == MINUS)
-            {
-                // A leading - means (0 - 7)
-                eat(MINUS, &interpret);
-            }
-            else
-            {
-                printf("Error: Expression must start with a number or sign\n");
-                break;
-            }
-            // Use 'continue' so we don't overwrite last_token_type at the bottom yet
-        }
-        else
-        {
-            printf("Error\n");
-            break;
-        }
-
-        last_token_type = new_token.type;
+      eat(PLUS, &interpret);
+      result = result + factor(&interpret);
     }
-
-    return result;
+    else if (token.type == MINUS)
+    {
+      eat(MINUS, &interpret);
+      result = result - factor(&interpret);
+    }
+  }
+  return result;
 }
 
+
+// Eat the provided token
+static bool eat(token_types token, Interpreter* interpret)
+{
+  if (interpret->current_token.type == token)
+  {
+    get_next_token(interpret);
+    return true;
+  }
+  return false;
+}
+
+// factor : INTEGER
+static int factor(Interpreter *interpret)
+{
+  Token token = interpret->current_token;
+  if (token.type == INT)
+  {
+    eat(INT, interpret); // We know this is true, safe to ignore return
+    return token.value;
+  }
+  else
+{
+    // ERROR CASE: The token was not an integer!
+    printf("Syntax Error: Expected an Integer\n");
+    interpret->error_found = true;
+    return 0;
+  }
+}
+
+// term : factor ((MUL | DIV) factor)*
+static int term(Interpreter *interpret)
+{
+  int result = factor(interpret);
+  Token token = {0};
+
+  while (is_multiplicative_op(interpret->current_token.type))
+  {
+    // Stop evaluating if a syntax error was found in factor()
+    if (interpret->error_found) break;
+    token = interpret->current_token;
+
+    if (token.type == MUL)
+    {
+      eat(MUL, interpret);
+      result = result * factor(interpret);
+    }
+    else if (token.type == DIV)
+    {
+      int right_factor = factor(interpret);
+
+      // Check for cascading errors before checking for div-by-zero
+      if (interpret->error_found) break;
+
+      if (right_factor == 0)
+      {
+        printf("Runtime Error: Division by zero\n");
+        interpret->error_found = true;
+        break;
+      }
+
+      result = result / right_factor;
+    }
+  }
+  return result;
+}
+
+// Lexer
 // Create the token for the next character
 static void get_next_token(Interpreter* interpret)
 {
-    Token token = {0};
-    bool is_combined = false;
-    token_types last_token = NONE;
-    // Return a EOL token when the last character of the buffer is reached \0 or \n
-    if (interpret->position > (interpret->length - 1))
+  // Create an empty token
+  Token token = {0};
+  char current_char = interpret->buffer[interpret->position];
+
+  // Detect whitespaces and skip them, relies on the fact that buffer is 0 terminated
+  while (current_char == ' ')
+  {
+    interpret->position++;
+    current_char = interpret->buffer[interpret->position];
+  }
+
+  // Return a EOL token when the last character of the buffer is reached \0 or \n
+  if ((interpret->position > (interpret->length - 1)) || (current_char == '\n') || (current_char == '\0') )
+  {
+    emit_single_char_token(interpret, EOL, 0);
+    return;
+  }
+
+  // Check if its a digit
+  if (isdigit(current_char))
+  {
+    token.type = INT;
+    token.value = convert_char(current_char);
+    interpret->position++;
+
+    // Get every following digit and make it one number
+    while (isdigit(interpret->buffer[interpret->position]))
     {
-        token.type = EOL;
-        token.value = 0;
-    }
-    else
-    {
-        while (true)
-        {
-
-            if (interpret->position > interpret->length)
-            {
-                interpret->error_found = true;
-                break;
-
-            }
-            char current_char = interpret->buffer[interpret->position];
-
-            if (is_digit(current_char))
-            {
-                token.type = INT;
-                token.value = multiple_digit_number(token.value,  convert_char(current_char));
-                interpret->position += 1;
-                last_token = INT;
-                continue;
-            }
-            else
-            {
-                if (last_token == INT)
-                {
-                    break;
-                }
-
-            }
-            
-            if (current_char == ' ')
-            {
-                interpret->position += 1;
-                continue;
-            }
-
-            else if (current_char == '+')
-            {
-                token.type = PLUS;
-                token.value = (int)current_char;
-                interpret->position += 1;
-            }
-            else if (current_char == '-')
-            {
-                token.type = MINUS;
-                token.value = (int)current_char;
-                interpret->position += 1;
-            }
-            else if (current_char == '\n')
-            {
-                token.type = EOL;
-            }
-            else
-            {
-                // Nothing fits -> returns the error
-                interpret->error_found = true;
-            }
-            break;
-        }
-
+      token.value = multiple_digit_number(
+        token.value,
+        convert_char(interpret->buffer[interpret->position]));
+      interpret->position ++;
     }
 
     interpret->current_token = token;
+    return;
+  }
+
+  // Check if its a plus sign
+  if (current_char == '+')
+  {
+    emit_single_char_token(interpret, PLUS, 0);
+    return;
+  }
+
+
+  // Check if its a minus sign
+  if (current_char == '-')
+  {
+    emit_single_char_token(interpret, MINUS, 0);
+    return;
+  }
+
+  // Check if its a asterix sign
+  if (current_char == '*')
+  {
+    emit_single_char_token(interpret, MUL, 0);
+    return;
+  }
+
+  // Check if its a divison sign
+  if (current_char == '/')
+  {
+    emit_single_char_token(interpret, DIV, 0);
+    return;
+  }
+
+
+  // Unknow character
+  interpret->error_found = true;
+  return;
 }
 
-static bool eat(token_types token, Interpreter* interprete)
+
+// Helper functions
+// Helper functiion for adding single characters to a token
+static void emit_single_char_token(Interpreter* interpret, token_types type, int value)
 {
-    if (interprete->current_token.type == token)
-    {
-        get_next_token(interprete);
-        return true;
-    }
-    return false;
+  Token token = {0};
+  token.type = type;
+  token.value = value;
+
+  // Save to the interpreter state
+  interpret->current_token = token;
+
+  // Do the annoying position increment here, once!
+  interpret->position++;
 }
 
-/*
- * Check if the character is a digit (0 - 9)
- * Returns true, if it is a digit, false if not
- */
-static bool is_digit(char character)
+// Check if its a plus or minus operator
+static bool is_additive_op(token_types type)
 {
-    if ((character >= '0') && (character <= '9'))
-    {
-        return true;
-    }
-    else
-    {
-        return false;
-    }
-
+  return (bool)(type == PLUS || type == MINUS);
 }
 
+// Check if its a multiplication or dividing operator
+static bool is_multiplicative_op(token_types type)
+{
+  return (bool)(type == MUL || type == DIV);
+}
 // Converts a single digit into a uint8_t number
 static uint8_t convert_char(char character)
 {
-    return (uint8_t) (character - '0');
+  return (uint8_t) (character - '0');
 }
 
 // Add the next lower digit to a number
 static int multiple_digit_number(int number, int digit_to_add)
 {
-    return (number * 10) + digit_to_add;
+  return (number * 10) + digit_to_add;
 }
