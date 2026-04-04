@@ -16,6 +16,8 @@ typedef enum
     MINUS,
     MUL,
     DIV,
+    LPAREN,
+    RPAREN,
     EOL,
     SPACE,
     ERROR,
@@ -37,8 +39,5 @@ typedef struct
     bool error_found;
 } Interpreter;
 
-
-int expr(char* buffer, size_t lenght);
-
-
+int calc(char* buffer, size_t length);
 #endif // INTERPRETER_H_

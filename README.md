@@ -12,7 +12,7 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 
 ## 🛠 Project Roadmap
 - [x] Basic addition and subtraction (`1 + 1`, `-5 + 10`) — *Done 2026-03-05*
-- [ ] Multiplication and Division
+- [x] Multiplication and Division - *Done 2026-04-04* 
 - [ ] Operator Precedence (BODMAS/PEMDAS)
 - [ ] Floating point numbers (double precision)
 - [ ] Parentheses for nested expressions

@@ -26,7 +26,7 @@ int main()
         continue;
       }
     }
-    printf("%d\n", expr(input_buffer, length));
+    printf("%d\n", calc(input_buffer, length));
   }
   return 0;
 }
