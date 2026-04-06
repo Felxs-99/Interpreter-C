@@ -10,7 +10,6 @@
 int main()
 {
   // Input buffer for user input, can hold 49 chars + \0
-  size_t length = 0;
   char input_buffer[50] = {0};
   int c = 0;
   while (1)
@@ -18,7 +17,6 @@ int main()
     printf(">>>");
     if (fgets(input_buffer, sizeof(input_buffer), stdin))
     {
-      length = strlen(input_buffer);
       if (strchr(input_buffer, '\n') == NULL)
       {
         // Ignore the line with too much input characters
