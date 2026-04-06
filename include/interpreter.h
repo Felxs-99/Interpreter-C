@@ -39,5 +39,30 @@ typedef struct
     bool error_found;
 } Interpreter;
 
-int calc(char* buffer, size_t length);
+// Ast node types
+typedef enum
+{
+    NODE_NUM,
+    NODE_BINOP
+} ast_node_type;
+
+// Ast nodes
+typedef struct ASTNode 
+{
+    ast_node_type type;
+    Token token;
+    struct ASTNode* left;
+    struct ASTNode* right;
+} ASTNode;
+
+// Expression function
+ASTNode* expr(Interpreter* interpret);
+// Evaluate the result
+int evaluate(ASTNode* node, Interpreter* interpret);
+// Clean up the ast in memory
+void free_ast(ASTNode* node);
+
+// Lexer function to get the next token in the input stream
+void get_next_token(Interpreter* interpret);
+
 #endif // INTERPRETER_H_

@@ -26,7 +26,25 @@ int main()
         continue;
       }
     }
-    printf("%d\n", calc(input_buffer, length));
+    Interpreter interpret = {0}; 
+    interpret.buffer = input_buffer;
+    interpret.length = strlen(input_buffer);
+    interpret.position = 0;
+    interpret.error_found = false;
+    
+    get_next_token(&interpret);
+    ASTNode* tree = expr(&interpret);
+
+    if (!interpret.error_found)
+    {
+      int final_answer = evaluate(tree, &interpret);
+
+      if (!interpret.error_found)
+      {
+        printf("%d\n", final_answer);
+      }
+    }
+    free_ast(tree);
   }
   return 0;
 }

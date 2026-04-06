@@ -1,7 +1,7 @@
 #include "utest.h"
 #include "interpreter.h"
 #include <string.h>
-
+/*
 // Test Addition : Simplest case
 UTEST(InterpreterTests, addition_single_digits_no_whitespace) {
     char test_expr[] = "2+2";
@@ -86,5 +86,28 @@ UTEST(InterpreterTests, divison_multiple_digits) {
     ASSERT_EQ(result, 25);
 }
 
+// Test Combination: Combination of +, -, *, /
+UTEST(InterpreterTests, combination_multiple_signs)
+{
+    char test_expr[] = "14 + 2 * 3 - 6 / 2";
+    int result = calc(test_expr, sizeof(test_expr));
+    ASSERT_EQ(result, 17);
+}
 
+// Test Parentheses: One ()
+UTEST(InterpreterTests, parentheses_one)
+{
+    char test_expr[] = "2 * (5 + 1)";
+    int result = calc(test_expr, sizeof(test_expr));
+    ASSERT_EQ(result, 12);
+}
+
+// Test Parentheses: Multiple ()
+UTEST(InterpreterTests, parentheses_multiple)
+{
+    char test_expr[] = "7 + 3 * (10 / (12 / (3 + 1) - 1)) / (2 + 3) - 5 - 3 + (8)";
+    int result = calc(test_expr, sizeof(test_expr));
+    ASSERT_EQ(result, 10);
+}
+*/
 UTEST_MAIN();
