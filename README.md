@@ -13,10 +13,10 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 ## 🛠 Project Roadmap
 - [x] Basic addition and subtraction (`1 + 1`, `-5 + 10`) — *Done 2026-03-05*
 - [x] Multiplication and Division — *Done 2026-04-04*
-- [x] Convert from *syntax-directed* to an *ast* interpreter
-- [x] Operator Precedence (BODMAS/PEMDAS)
+- [x] Convert from *syntax-directed* to an *ast* interpreter — *Done 2026-04-07*
+- [x] Operator Precedence (BODMAS/PEMDAS) — *Done 2026-04-07*
 - [ ] Floating point numbers (double precision)
-- [x] Parentheses for nested expressions
+- [x] Parentheses for nested expressions — *Done 2026-04-07*
 - [ ] Alternative bases (Hexadecimal `0x` and Binary `0b`)
 
 ## 🏗 Architecture
