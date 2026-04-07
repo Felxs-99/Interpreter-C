@@ -43,7 +43,8 @@ typedef struct
 typedef enum
 {
     NODE_NUM,
-    NODE_BINOP
+    NODE_BINOP,
+    NODE_UNAOP
 } ast_node_type;
 
 // Ast nodes

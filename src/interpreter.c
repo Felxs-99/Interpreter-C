@@ -5,8 +5,9 @@
 #include <ctype.h>
 
 // Parser function prototypes
-ASTNode* create_num_node(Token token);
-ASTNode* create_binop_node(ASTNode* left, Token op, ASTNode* right);
+static ASTNode* create_num_node(Token token);
+static ASTNode* create_binop_node(ASTNode* left, Token op, ASTNode* right);
+static ASTNode* create_unaop_node(Token op, ASTNode* right);
 static bool eat(token_types token, Interpreter *interprete);
 static ASTNode* term(Interpreter *interpret);
 static ASTNode* factor(Interpreter *interpret);
@@ -25,7 +26,7 @@ static bool is_multiplicative_op(token_types type);
 */
 
 // Ast node for numbers
-ASTNode* create_num_node(Token token) 
+static ASTNode* create_num_node(Token token) 
 {
     ASTNode* node = (ASTNode*)malloc(sizeof(ASTNode));
     node->type = NODE_NUM;
@@ -35,14 +36,25 @@ ASTNode* create_num_node(Token token)
     return node;
 }
 
-// Ast node for operations
-ASTNode* create_binop_node(ASTNode* left, Token op, ASTNode* right) 
+// Ast node for binary operations
+static ASTNode* create_binop_node(ASTNode* left, Token op, ASTNode* right) 
 {
     ASTNode* node = (ASTNode*)malloc(sizeof(ASTNode));
     node->type = NODE_BINOP;
     node->token = op;
     node->left = left;
     node->right = right;
+    return node;
+}
+
+// Ast node for unary operations
+static ASTNode* create_unaop_node(Token op, ASTNode* expr) 
+{
+    ASTNode* node = (ASTNode*)malloc(sizeof(ASTNode));
+    node->type = NODE_UNAOP;
+    node->token = op;
+    node->left = NULL;
+    node->right = expr;
     return node;
 }
 
@@ -121,15 +133,24 @@ static ASTNode* term(Interpreter *interpret)
   return left_node;
 }
 
-// factor : INTEGER
+// factor : (PLUS | MINUS) factor | INTEGER | LPAREN expr RPAREN
 static ASTNode* factor(Interpreter *interpret)
 {
   Token token = interpret->current_token;
-  if (token.type == INT)
+  // For unary operators
+  if ((token.type == PLUS) || (token.type == MINUS))
+  {
+    eat(token.type, interpret);
+    ASTNode* result = factor(interpret);
+    return create_unaop_node(token, result);
+  }
+  // For integer values
+  else if (token.type == INT)
   {
     eat(INT, interpret);
     return create_num_node(token);
   }
+  // For parentheses
   else if (token.type == LPAREN)
   {
     eat(LPAREN, interpret);
@@ -145,7 +166,7 @@ static ASTNode* factor(Interpreter *interpret)
   }
   else
   {
-    printf("Syntax Error: Expected an Integer or '('\n");
+    printf("Syntax Error: Expected an Integer, +, - or '('\n");
     interpret->error_found = true;
     return NULL;
   }
@@ -298,6 +319,19 @@ int evaluate(ASTNode* node, Interpreter* interpret)
         return left_val / right_val;
       }
       break;
+
+    case NODE_UNAOP:
+      int expr_val = evaluate(node->right, interpret);
+      if (interpret->error_found) return 0;
+      
+      if (node->token.type == PLUS)
+      {
+        return +expr_val;
+      }
+      else if (node->token.type == MINUS)
+      {
+        return -expr_val;
+      }
 
   }
   return 0;
