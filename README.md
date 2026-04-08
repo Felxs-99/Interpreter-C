@@ -23,8 +23,11 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - [ ] Support for variables line `a = 10 * 5`
 - [ ] Support for build in functions like `sin(90)`
 
-## 🏗 Architecture
-The project follows a classic interpreter pipeline:
-1. **Lexer:** Scans the raw buffer and produces `Token` structs.
-2. **Parser:** Consumes tokens and calculates results using a recursive logic flow.
-3. **Interpreter State:** Encapsulated in a central `Interpreter` struct to avoid global variables.
+## 🏗 Engine Architecture
+
+The project follows a standard, state-driven compiler pipeline:
+
+1. **Lexical Analysis (Lexer):** Scans the raw character buffer to emit strongly-typed `Token` structs, utilizing an isolated sandbox memory state to safely parse strings into integers.
+2. **Recursive Descent Parser:** Consumes the token stream to dynamically construct an Abstract Syntax Tree (AST), ensuring mathematical precedence is mapped directly into the data structure.
+3. **AST Evaluator:** Traverses the generated tree (Post-order) to compute the final expression, strictly protected by type-generic compiler extensions to trap Undefined Behavior.
+4. **Context Encapsulation:** All execution state—including buffers, position pointers, and panic flags—is strictly isolated within a central `Interpreter` context struct, eliminating global variables.
