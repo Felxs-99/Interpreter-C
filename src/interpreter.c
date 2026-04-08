@@ -1,8 +1,10 @@
-#include "interpreter.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <limits.h>
+#include "interpreter.h"
+#include "overflow.h"
 
 // Parser function prototypes
 static ASTNode* create_num_node(Token token);
@@ -14,8 +16,9 @@ static ASTNode* factor(Interpreter *interpret);
 
 // Helper function prototypes
 static uint8_t convert_char(char character);
-static int multiple_digit_number(int number, int digit_to_add);
-static void emit_single_char_token(Interpreter *interpret, token_types type, int value);
+static bool multiple_digit_number(int* number, int digit_to_add);
+static void make_single_char_token(Interpreter *interpret, token_types type, int value);
+static void set_error_state(Interpreter* interpret);
 static bool is_additive_op(token_types type);
 static bool is_multiplicative_op(token_types type);
 
@@ -158,16 +161,21 @@ static ASTNode* factor(Interpreter *interpret)
     if (!eat(RPAREN, interpret)) 
     {
       printf("Syntax Error: Missing closing ')'\n");
-      interpret->error_found = true;
+      set_error_state(interpret);
       free_ast(result);
       return NULL; 
     }
     return result;
   }
+  else if (token.type == ERROR)
+  {
+    interpret->error_found = true;
+    return NULL;
+  }
   else
   {
-    printf("Syntax Error: Expected an Integer, +, - or '('\n");
-    interpret->error_found = true;
+    printf("Syntax Error: Expected an Integer, or '('\n");
+    set_error_state(interpret);
     return NULL;
   }
 }
@@ -195,7 +203,7 @@ void get_next_token(Interpreter* interpret)
   // Return a EOL token when the last character of the buffer is reached \0 or \n
   if ((interpret->position > (interpret->length - 1)) || (current_char == '\n') || (current_char == '\0') )
   {
-    emit_single_char_token(interpret, EOL, 0);
+    make_single_char_token(interpret, EOL, 0);
     return;
   }
 
@@ -209,9 +217,12 @@ void get_next_token(Interpreter* interpret)
     // Get every following digit and make it one number
     while (isdigit(interpret->buffer[interpret->position]))
     {
-      token.value = multiple_digit_number(
-        token.value,
-        convert_char(interpret->buffer[interpret->position]));
+      if (!multiple_digit_number(&token.value, convert_char(interpret->buffer[interpret->position])))
+      {
+        printf("Syntax Error: The number starting with '%d...' is too large!\n", token.value);
+        set_error_state(interpret);
+        return;
+      }
       interpret->position ++;
     }
 
@@ -222,7 +233,7 @@ void get_next_token(Interpreter* interpret)
   // Check if its a plus sign
   if (current_char == '+')
   {
-    emit_single_char_token(interpret, PLUS, 0);
+    make_single_char_token(interpret, PLUS, 0);
     return;
   }
 
@@ -230,43 +241,41 @@ void get_next_token(Interpreter* interpret)
   // Check if its a minus sign
   if (current_char == '-')
   {
-    emit_single_char_token(interpret, MINUS, 0);
+    make_single_char_token(interpret, MINUS, 0);
     return;
   }
 
   // Check if its a asterix sign
   if (current_char == '*')
   {
-    emit_single_char_token(interpret, MUL, 0);
+    make_single_char_token(interpret, MUL, 0);
     return;
   }
 
   // Check if its a divison sign
   if (current_char == '/')
   {
-    emit_single_char_token(interpret, DIV, 0);
+    make_single_char_token(interpret, DIV, 0);
     return;
   }
 
   // Check if its a left parentheses sign
   if (current_char == '(')
   {
-    emit_single_char_token(interpret, LPAREN, 0);
+    make_single_char_token(interpret, LPAREN, 0);
     return;
   }
 
   // Check if its a right parentheses sign
   if (current_char == ')')
   {
-    emit_single_char_token(interpret, RPAREN, 0);
+    make_single_char_token(interpret, RPAREN, 0);
     return;
   }
 
   // Unknow character
   printf("Syntax Error: Unknown character '%c'\n", current_char);
-  interpret->error_found = true;
-  interpret->current_token.type = ERROR;
-  interpret->current_token.value = 0;
+  set_error_state(interpret);
   return;
 }
 
@@ -293,19 +302,39 @@ int evaluate(ASTNode* node, Interpreter* interpret)
     case NODE_BINOP:
       int left_val = evaluate(node->left, interpret);
       int right_val = evaluate(node->right, interpret);
+      int result = 0;
 
       if (interpret->error_found) return 0;
       if (node->token.type == PLUS) 
       {
-        return left_val + right_val;
+        if (SAFE_ADD(left_val, right_val, &result))
+        {
+          printf("Runtime Error: Integer Overflow or Underflow\n");
+          set_error_state(interpret);
+          return 0;
+        }
+
+        return result;
       }
       else if (node->token.type == MINUS) 
       {
-        return left_val - right_val;
+        if (SAFE_SUB(left_val, right_val, &result))
+        {
+          printf("Runtime Error: Integer Overflow or Underflow\n"); 
+          set_error_state(interpret);
+          return 0;
+        }
+        return result;
       }
       else if (node->token.type == MUL) 
       {
-        return left_val * right_val;
+        if (SAFE_MUL(left_val, right_val, &result))
+        {
+          printf("Runtime Error: Integer Overflow or Underflow\n");
+          set_error_state(interpret);
+          return 0;
+        }
+        return result;
       }
       else if (node->token.type == DIV) 
       {
@@ -313,7 +342,14 @@ int evaluate(ASTNode* node, Interpreter* interpret)
         if (right_val == 0) 
         {
           printf("Runtime Error: Division by zero\n");
-          interpret->error_found = true;
+          set_error_state(interpret);
+          return 0;
+        }
+
+        if (left_val == INT_MIN && right_val == -1)
+        {
+          printf("Runtime Error: Integer Overflow\n");
+          set_error_state(interpret);
           return 0;
         }
         return left_val / right_val;
@@ -329,7 +365,13 @@ int evaluate(ASTNode* node, Interpreter* interpret)
         return +expr_val;
       }
       else if (node->token.type == MINUS)
-      {
+      {  
+        if (expr_val == (INT_MIN))
+        {
+          printf("Runtime Error: Integer Overflow\n");
+          set_error_state(interpret);
+          return 0;
+        }
         return -expr_val;
       }
 
@@ -342,7 +384,7 @@ int evaluate(ASTNode* node, Interpreter* interpret)
  * ####################
 */
 // Helper functiion for adding single characters to a token
-static void emit_single_char_token(Interpreter* interpret, token_types type, int value)
+static void make_single_char_token(Interpreter* interpret, token_types type, int value)
 {
   Token token = {0};
   token.type = type;
@@ -353,6 +395,14 @@ static void emit_single_char_token(Interpreter* interpret, token_types type, int
 
   // Do the annoying position increment here, once!
   interpret->position++;
+}
+
+// Helper function to set the error state
+static void set_error_state(Interpreter* interpret)
+{
+  interpret->error_found = true;
+  interpret->current_token.type = ERROR;
+  interpret->current_token.value = 0;
 }
 
 // Check if its a plus or minus operator
@@ -372,8 +422,21 @@ static uint8_t convert_char(char character)
   return (uint8_t) (character - '0');
 }
 
-// Add the next lower digit to a number
-static int multiple_digit_number(int number, int digit_to_add)
+// Check if the next lower digit can be added and do it, if its possible
+static bool multiple_digit_number(int* number, int digit_to_add)
 {
-  return (number * 10) + digit_to_add;
+  int result = *number;
+  // Check if it can be shiftet to the left (base 10 shift)
+  if (SAFE_MUL(*number, 10, &result))
+  {
+    return false;
+  }
+  // Check if the digit can be added
+  if (SAFE_ADD(result, digit_to_add, &result))
+  {
+    return false;
+  }
+  *number = result;
+  return true;
 }
+

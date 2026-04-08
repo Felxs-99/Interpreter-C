@@ -15,9 +15,11 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - [x] Multiplication and Division — *Done 2026-04-04*
 - [x] Convert from *syntax-directed* to an *ast* interpreter — *Done 2026-04-07*
 - [x] Operator Precedence (BODMAS/PEMDAS) — *Done 2026-04-07*
-- [ ] Floating point numbers (double precision)
 - [x] Parentheses for nested expressions — *Done 2026-04-07*
+- [ ] Floating point numbers (double precision)
 - [ ] Alternative bases (Hexadecimal `0x` and Binary `0b`)
+- [ ] Support for variables line `a = 10 * 5`
+- [ ] Support for build in functions like `sin(90)`
 
 ## 🏗 Architecture
 The project follows a classic interpreter pipeline:
