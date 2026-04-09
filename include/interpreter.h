@@ -1,11 +1,11 @@
 #ifndef INTERPRETER_H_
 #define INTERPRETER_H_
 
-#include <string.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 // Available operators and EOL -> end of line
 typedef enum
@@ -18,16 +18,21 @@ typedef enum
     DIV,
     LPAREN,
     RPAREN,
+    ID,
+    ASSIGN,
     EOL,
     SPACE,
     ERROR,
 } token_types;
 
+#define NAME_LENGTH 11
+
 // Token struct
 typedef struct
 {
-  int value;
-  token_types type;
+    int value;
+    char name[NAME_LENGTH];
+    token_types type;
 } Token;
 
 typedef struct
@@ -44,26 +49,28 @@ typedef enum
 {
     NODE_NUM,
     NODE_BINOP,
-    NODE_UNAOP
+    NODE_UNAOP,
+    NODE_ASSIGN,
+    NODE_VAR
 } ast_node_type;
 
 // Ast nodes
-typedef struct ASTNode 
+typedef struct ASTNode
 {
     ast_node_type type;
     Token token;
-    struct ASTNode* left;
-    struct ASTNode* right;
+    struct ASTNode *left;
+    struct ASTNode *right;
 } ASTNode;
 
 // Expression function
-ASTNode* expr(Interpreter* interpret);
+ASTNode *expr(Interpreter *interpret);
 // Evaluate the result
-int evaluate(ASTNode* node, Interpreter* interpret);
+int evaluate(ASTNode *node, Interpreter *interpret);
 // Clean up the ast in memory
-void free_ast(ASTNode* node);
+void free_ast(ASTNode *node);
 
 // Lexer function to get the next token in the input stream
-void get_next_token(Interpreter* interpret);
+void get_next_token(Interpreter *interpret);
 
 #endif // INTERPRETER_H_

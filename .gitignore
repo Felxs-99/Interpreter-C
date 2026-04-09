@@ -1,7 +1,3 @@
-# Emacs files
-.clang-format
-.dir-locals.el
-
 # Cache files, folders
 /.cache/
 
@@ -10,6 +6,9 @@ CMakeLists.txt
 
 # Build folder
 /build/
+
+# clang files
+.clangd
 
 # Readme preview files
 README.html
