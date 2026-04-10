@@ -527,3 +527,24 @@ static bool multiple_digit_number(int *number, int digit_to_add)
     *number = result;
     return true;
 }
+
+void init_interpreter(Interpreter *interpret)
+{
+    interpret->buffer = NULL;
+    interpret->length = 0;
+    interpret->position = 0;
+    interpret->current_token = (Token){0};
+    interpret->error_found = false;
+
+    interpret->var_count = 0;
+    interpret->var_capacity = 8;
+
+    interpret->variables = malloc(interpret->var_capacity * sizeof(Variable));
+
+    if (interpret->variables == NULL)
+    {
+        printf("Fatal Error: Failed to allocate memory for variables!\n");
+        interpret->error_found = true;
+        return;
+    }
+}

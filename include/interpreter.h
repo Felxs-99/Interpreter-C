@@ -25,7 +25,13 @@ typedef enum
     ERROR,
 } token_types;
 
+// Max length of the token name
 #define NAME_LENGTH 11
+typedef struct
+{
+    char name[NAME_LENGTH];
+    int value;
+} Variable;
 
 // Token struct
 typedef struct
@@ -42,6 +48,10 @@ typedef struct
     size_t position;
     Token current_token;
     bool error_found;
+
+    Variable *variables;
+    unsigned int var_count;
+    unsigned int var_capacity;
 } Interpreter;
 
 // Ast node types
