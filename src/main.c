@@ -1,48 +1,65 @@
 #include "main.h"
-#include <stdio.h>
-#include <string.h>
+#include "interpreter.h"
+#include <readline/history.h>
+#include <readline/readline.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "interpreter.h"
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 int main()
 {
-  // Input buffer for user input, can hold 49 chars + \0
-  char input_buffer[50] = {0};
-  int c = 0;
-  while (1)
-  {
-    printf(">>>");
-    if (fgets(input_buffer, sizeof(input_buffer), stdin))
-    {
-      if (strchr(input_buffer, '\n') == NULL)
-      {
-        // Ignore the line with too much input characters
-        while ((c = getchar()) != '\n' && c != EOF);
-        continue;
-      }
-    }
-    Interpreter interpret = {0}; 
-    interpret.buffer = input_buffer;
-    interpret.length = strlen(input_buffer);
-    interpret.position = 0;
-    interpret.error_found = false;
-    
-    get_next_token(&interpret);
-    ASTNode* tree = expr(&interpret);
+    Interpreter interpret = {0};
+    init_interpreter(
+        &interpret); // (Assuming you split this like we discussed!)
 
-    if (!interpret.error_found)
+    while (1)
     {
-      int final_answer = evaluate(tree, &interpret);
+        // 1. readline handles the prompt AND reads the keystrokes!
+        char *input_buffer = readline(">>> ");
 
-      if (!interpret.error_found)
-      {
-        printf("%d\n", final_answer);
-      }
+        // 2. If the user presses Ctrl+D (EOF), input_buffer is NULL
+        if (input_buffer == NULL)
+        {
+            printf("\nExiting...\n");
+            break;
+        }
+
+        // 3. If they actually typed something, add it to the Up-Arrow history!
+        if (strlen(input_buffer) > 0)
+        {
+            add_history(input_buffer);
+        }
+        else
+        {
+            // They just pressed Enter on an empty line
+            free(input_buffer);
+            continue;
+        }
+
+        // 4. Run your interpreter just like before
+        reset_interpreter_line(&interpret, input_buffer);
+        get_next_token(&interpret);
+
+        ASTNode *tree = statement(&interpret);
+
+        if (!interpret.error_found)
+        {
+            int final_answer = evaluate(tree, &interpret);
+            if (!interpret.error_found)
+            {
+                printf("%d\n", final_answer);
+            }
+        }
+
+        free_ast(tree);
+
+        // 5. CRITICAL: You must free the string readline gave you!
+        free(input_buffer);
     }
-    free_ast(tree);
-  }
-  return 0;
+
+    free_interpreter(&interpret);
+    return 0;
 }

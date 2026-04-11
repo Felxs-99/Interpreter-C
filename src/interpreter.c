@@ -5,16 +5,22 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Parser function prototypes
 static ASTNode *create_num_node(Token token);
 static ASTNode *create_binop_node(ASTNode *left, Token op, ASTNode *right);
 static ASTNode *create_unaop_node(Token op, ASTNode *right);
-static ASTNode *create_assign_node(ASTNode *right, Token op, ASTNode *left);
+static ASTNode *create_assign_node(ASTNode *left, Token op, ASTNode *right);
 static ASTNode *create_var_node(Token id);
 static bool eat(token_types token, Interpreter *interprete);
+static ASTNode *expr(Interpreter *interpret);
 static ASTNode *term(Interpreter *interpret);
 static ASTNode *factor(Interpreter *interpret);
+
+// Interpreter function prototypes
+static void set_variable(Interpreter *interpret, const char *name, int value);
+static int get_variable(Interpreter *interpret, const char *name);
 
 // Helper function prototypes
 static uint8_t convert_char(char character);
@@ -65,7 +71,7 @@ static ASTNode *create_unaop_node(Token op, ASTNode *expr)
 }
 
 // Ast node for assign operators
-static ASTNode *create_assign_node(ASTNode *right, Token op, ASTNode *left)
+static ASTNode *create_assign_node(ASTNode *left, Token op, ASTNode *right)
 {
     ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
     node->type = NODE_ASSIGN;
@@ -121,6 +127,13 @@ ASTNode *statement(Interpreter *interpret)
 
     if (is_assign_op(interpret->current_token.type))
     {
+        if (left_node->type != NODE_VAR)
+        {
+            printf("Syntax Error: You can only assign values to variables.\n");
+            set_error_state(interpret);
+            free_ast(left_node);
+            return NULL;
+        }
         token = interpret->current_token;
         if (!eat(ASSIGN, interpret))
         {
@@ -141,7 +154,7 @@ ASTNode *statement(Interpreter *interpret)
 }
 
 // Evaluate the expression
-ASTNode *expr(Interpreter *interpret)
+static ASTNode *expr(Interpreter *interpret)
 {
     ASTNode *left_node = term(interpret);
     Token token = {0};
@@ -229,7 +242,7 @@ static ASTNode *factor(Interpreter *interpret)
         interpret->error_found = true;
         return NULL;
     }
-    else if (token.type)
+    else if (token.type == ID)
     {
         eat(ID, interpret);
         return create_var_node(token);
@@ -323,33 +336,33 @@ void get_next_token(Interpreter *interpret)
     // Check for known symbols and create the correspondig token
     switch (current_char)
     {
-    case '+':
-        make_single_char_token(interpret, PLUS, 0);
-        return;
-    case '-':
-        make_single_char_token(interpret, MINUS, 0);
-        return;
-    case '*':
-        make_single_char_token(interpret, MUL, 0);
-        return;
-    case '/':
-        make_single_char_token(interpret, DIV, 0);
-        return;
-    case '(':
-        make_single_char_token(interpret, LPAREN, 0);
-        return;
-    case ')':
-        make_single_char_token(interpret, RPAREN, 0);
-        return;
-    case '=':
-        make_single_char_token(interpret, ASSIGN, 0);
-        return;
-    case '\n':
-    case '\0':
-        make_single_char_token(interpret, EOL, 0);
-        return;
-    default:
-        break;
+        case '+':
+            make_single_char_token(interpret, PLUS, 0);
+            return;
+        case '-':
+            make_single_char_token(interpret, MINUS, 0);
+            return;
+        case '*':
+            make_single_char_token(interpret, MUL, 0);
+            return;
+        case '/':
+            make_single_char_token(interpret, DIV, 0);
+            return;
+        case '(':
+            make_single_char_token(interpret, LPAREN, 0);
+            return;
+        case ')':
+            make_single_char_token(interpret, RPAREN, 0);
+            return;
+        case '=':
+            make_single_char_token(interpret, ASSIGN, 0);
+            return;
+        case '\n':
+        case '\0':
+            make_single_char_token(interpret, EOL, 0);
+            return;
+        default:
+            break;
     }
 
     // Unknow character
@@ -375,93 +388,197 @@ int evaluate(ASTNode *node, Interpreter *interpret)
     // Determine what kinde of node it is
     switch (node->type)
     {
-    case NODE_NUM:
-        return node->token.value;
+        case NODE_NUM:
+            return node->token.value;
 
-    case NODE_BINOP:
-    {
-        int left_val = evaluate(node->left, interpret);
-        int right_val = evaluate(node->right, interpret);
-        int result = 0;
+        case NODE_BINOP:
+        {
+            int left_val = evaluate(node->left, interpret);
+            int right_val = evaluate(node->right, interpret);
+            int result = 0;
 
-        if (interpret->error_found)
+            if (interpret->error_found)
+                return 0;
+            if (node->token.type == PLUS)
+            {
+                if (SAFE_ADD(left_val, right_val, &result))
+                {
+                    printf("Runtime Error: Integer Overflow or Underflow\n");
+                    set_error_state(interpret);
+                    return 0;
+                }
+
+                return result;
+            }
+            else if (node->token.type == MINUS)
+            {
+                if (SAFE_SUB(left_val, right_val, &result))
+                {
+                    printf("Runtime Error: Integer Overflow or Underflow\n");
+                    set_error_state(interpret);
+                    return 0;
+                }
+                return result;
+            }
+            else if (node->token.type == MUL)
+            {
+                if (SAFE_MUL(left_val, right_val, &result))
+                {
+                    printf("Runtime Error: Integer Overflow or Underflow\n");
+                    set_error_state(interpret);
+                    return 0;
+                }
+                return result;
+            }
+            else if (node->token.type == DIV)
+            {
+                // The Division-by-Zero check returns!
+                if (right_val == 0)
+                {
+                    printf("Runtime Error: Division by zero\n");
+                    set_error_state(interpret);
+                    return 0;
+                }
+
+                if (left_val == INT_MIN && right_val == -1)
+                {
+                    printf("Runtime Error: Integer Overflow\n");
+                    set_error_state(interpret);
+                    return 0;
+                }
+                return left_val / right_val;
+            }
+            break;
+        }
+
+        case NODE_UNAOP:
+        {
+            int expr_val = evaluate(node->right, interpret);
+            if (interpret->error_found)
+                return 0;
+
+            if (node->token.type == PLUS)
+            {
+                return +expr_val;
+            }
+            else if (node->token.type == MINUS)
+            {
+                if (expr_val == (INT_MIN))
+                {
+                    printf("Runtime Error: Integer Overflow\n");
+                    set_error_state(interpret);
+                    return 0;
+                }
+                return -expr_val;
+            }
             return 0;
-        if (node->token.type == PLUS)
-        {
-            if (SAFE_ADD(left_val, right_val, &result))
-            {
-                printf("Runtime Error: Integer Overflow or Underflow\n");
-                set_error_state(interpret);
-                return 0;
-            }
+        }
 
-            return result;
-        }
-        else if (node->token.type == MINUS)
+        case NODE_ASSIGN:
         {
-            if (SAFE_SUB(left_val, right_val, &result))
-            {
-                printf("Runtime Error: Integer Overflow or Underflow\n");
-                set_error_state(interpret);
-                return 0;
-            }
-            return result;
+            int left_val = evaluate(node->right, interpret);
+            set_variable(interpret, node->left->token.name, left_val);
+            return left_val;
         }
-        else if (node->token.type == MUL)
-        {
-            if (SAFE_MUL(left_val, right_val, &result))
-            {
-                printf("Runtime Error: Integer Overflow or Underflow\n");
-                set_error_state(interpret);
-                return 0;
-            }
-            return result;
-        }
-        else if (node->token.type == DIV)
-        {
-            // The Division-by-Zero check returns!
-            if (right_val == 0)
-            {
-                printf("Runtime Error: Division by zero\n");
-                set_error_state(interpret);
-                return 0;
-            }
 
-            if (left_val == INT_MIN && right_val == -1)
-            {
-                printf("Runtime Error: Integer Overflow\n");
-                set_error_state(interpret);
-                return 0;
-            }
-            return left_val / right_val;
+        case NODE_VAR:
+        {
+            return get_variable(interpret, node->token.name);
         }
-        break;
     }
+    return 0;
+}
 
-    case NODE_UNAOP:
+// Initialize the interpreter struct
+void init_interpreter(Interpreter *interpret)
+{
+    interpret->buffer = NULL;
+    interpret->length = 0;
+    interpret->position = 0;
+    interpret->current_token = (Token){0};
+    interpret->error_found = false;
+
+    interpret->var_count = 0;
+    interpret->var_capacity = 8;
+
+    interpret->variables = malloc(interpret->var_capacity * sizeof(Variable));
+
+    if (interpret->variables == NULL)
     {
-        int expr_val = evaluate(node->right, interpret);
-        if (interpret->error_found)
-            return 0;
-
-        if (node->token.type == PLUS)
-        {
-            return +expr_val;
-        }
-        else if (node->token.type == MINUS)
-        {
-            if (expr_val == (INT_MIN))
-            {
-                printf("Runtime Error: Integer Overflow\n");
-                set_error_state(interpret);
-                return 0;
-            }
-            return -expr_val;
-        }
-    }
-        return 0;
+        printf("Fatal Error: Failed to allocate memory for variables!\n");
+        interpret->error_found = true;
+        return;
     }
 }
+
+// Resets the parser for a brand new line of text
+void reset_interpreter_line(Interpreter *interpret, char *buffer)
+{
+    interpret->buffer = buffer;
+    interpret->length = strlen(buffer);
+    interpret->position = 0; // Reset the reading cursor to the start!
+    interpret->current_token = (Token){0}; // Wipe the old token
+    interpret->error_found = false;        // Forgive any past syntax errors!
+}
+
+// Free the allocated memory of the variable structur in the interpreter
+void free_interpreter(Interpreter *interpret)
+{
+    free(interpret->variables);
+    interpret->variables = NULL;
+    interpret->var_count = 0;
+    interpret->var_capacity = 0;
+}
+
+// Check if a variable name is already known and if not save it as a new name
+static void set_variable(Interpreter *interpret, const char *name, int value)
+{
+    // Check if the variable already exist and if yes update it
+    for (unsigned int i = 0; i < interpret->var_count; i++)
+    {
+        if (strcmp(interpret->variables[i].name, name) == 0)
+        {
+            interpret->variables[i].value = value;
+            return;
+        }
+    }
+
+    if (interpret->var_count >= interpret->var_capacity)
+    {
+        interpret->var_capacity *= 2;
+        Variable *new_memory = (Variable *)realloc(
+            interpret->variables, interpret->var_capacity * sizeof(Variable));
+
+        if (new_memory == NULL)
+        {
+            printf("Fatal Error: Failed to allocate memory for variables!\n");
+            set_error_state(interpret);
+            return;
+        }
+        interpret->variables = new_memory;
+    }
+    unsigned int index = interpret->var_count;
+    strcpy(interpret->variables[index].name, name);
+    interpret->variables[index].value = value;
+    interpret->var_count++;
+}
+
+// Check if a variable exists in the symbol table and if yes returns the value
+static int get_variable(Interpreter *interpret, const char *name)
+{
+    for (unsigned int i = 0; i < interpret->var_count; i++)
+    {
+        if (strcmp(interpret->variables[i].name, name) == 0)
+        {
+            return interpret->variables[i].value;
+        }
+    }
+
+    printf("Runtime Error: Variable '%s' is not defined!\n", name);
+    set_error_state(interpret);
+    return 0;
+}
+
 /*
  * ####################
  * # Helper Functions #
@@ -526,25 +643,4 @@ static bool multiple_digit_number(int *number, int digit_to_add)
     }
     *number = result;
     return true;
-}
-
-void init_interpreter(Interpreter *interpret)
-{
-    interpret->buffer = NULL;
-    interpret->length = 0;
-    interpret->position = 0;
-    interpret->current_token = (Token){0};
-    interpret->error_found = false;
-
-    interpret->var_count = 0;
-    interpret->var_capacity = 8;
-
-    interpret->variables = malloc(interpret->var_capacity * sizeof(Variable));
-
-    if (interpret->variables == NULL)
-    {
-        printf("Fatal Error: Failed to allocate memory for variables!\n");
-        interpret->error_found = true;
-        return;
-    }
 }

@@ -73,8 +73,8 @@ typedef struct ASTNode
     struct ASTNode *right;
 } ASTNode;
 
-// Expression function
-ASTNode *expr(Interpreter *interpret);
+// Statement function
+ASTNode *statement(Interpreter *interpret);
 // Evaluate the result
 int evaluate(ASTNode *node, Interpreter *interpret);
 // Clean up the ast in memory
@@ -83,4 +83,10 @@ void free_ast(ASTNode *node);
 // Lexer function to get the next token in the input stream
 void get_next_token(Interpreter *interpret);
 
+// Initialize the interpreter struct
+void init_interpreter(Interpreter *interpret);
+void reset_interpreter_line(Interpreter *interpret, char *buffer);
+
+// Free the allocated memory of the variable structur in the interpreter
+void free_interpreter(Interpreter *interpret);
 #endif // INTERPRETER_H_
