@@ -325,11 +325,13 @@ void get_next_token(Interpreter *interpret)
         if (has_decimal)
         {
             token.type = FLOAT;
+            token.value.type = VAL_FLOAT;
             token.value.as.f_val = strtod(temp_num, NULL);
         }
         else
         {
             token.type = INT;
+            token.value.type = VAL_INT;
             token.value.as.i_val = atoi(temp_num);
         }
 
@@ -610,8 +612,16 @@ void init_interpreter(Interpreter *interpret)
 // Set mathematical constants in the interpreter.
 void set_math_const(Interpreter *interpret)
 {
-    // ATM only for proofe of concept, needs float to be useful
+    // Eulers number
     set_constant(interpret, "e", (Value){VAL_FLOAT, {.f_val = 2.718282}});
+    // Pi
+    set_constant(interpret, "pi", (Value){VAL_FLOAT, {.f_val = 3.141593}});
+    // Speed of light in m/s
+    set_constant(interpret, "c", (Value){VAL_INT, {.i_val = 299792458}});
+    // Vacuumn permittivity in (A*s)/(V*m)
+    set_constant(interpret, "ep", (Value){VAL_FLOAT, {.f_val = 8.854188}});
+    // Vacuumn permeability in N/(A²)
+    set_constant(interpret, "mu", (Value){VAL_FLOAT, {.f_val = 1.256637}});
 }
 
 // Resets the parser for a brand new line of text

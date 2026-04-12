@@ -12,9 +12,7 @@
 int main()
 {
     Interpreter interpret = {0};
-    init_interpreter(
-        &interpret); // (Assuming you split this like we discussed!)
-
+    init_interpreter(&interpret);
     while (1)
     {
         // 1. readline handles the prompt AND reads the keystrokes!
@@ -56,7 +54,7 @@ int main()
                 }
                 else if (final_answer.type == VAL_FLOAT)
                 {
-                    printf("%f\n", final_answer.as.f_val);
+                    printf("%.7g\n", final_answer.as.f_val);
                 }
             }
         }

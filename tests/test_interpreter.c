@@ -1,5 +1,6 @@
 #include "interpreter.h"
 #include "utest.h"
+#include <math.h>
 #include <string.h>
 
 typedef struct
@@ -174,7 +175,7 @@ UTEST(InterpreterTests, division_single_digits_no_whitespace)
     TestResult result = calc(test_expr, sizeof(test_expr));
     ASSERT_FALSE(result.error);
     ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
-    ASSERT_EQ(result.answer.as.i_val, 2.0);
+    ASSERT_TRUE(fabs(2.0 - result.answer.as.f_val) < 0.0001);
 }
 
 // Test Division: Whitespace handling
@@ -184,7 +185,7 @@ UTEST(InterpreterTests, division_with_various_whitespace)
     TestResult result = calc(test_expr, sizeof(test_expr));
     ASSERT_FALSE(result.error);
     ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
-    ASSERT_EQ(result.answer.as.i_val, 2.0);
+    ASSERT_TRUE(fabs(2.0 - result.answer.as.f_val) < 0.0001);
 }
 
 // Test Division: Larger numbers
@@ -194,7 +195,7 @@ UTEST(InterpreterTests, divison_multiple_digits)
     TestResult result = calc(test_expr, sizeof(test_expr));
     ASSERT_FALSE(result.error);
     ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
-    ASSERT_EQ(result.answer.as.i_val, 25.0);
+    ASSERT_TRUE(fabs(25.0 - result.answer.as.f_val) < 0.0001);
 }
 
 // Test Combination: Combination of +, -, *, /
@@ -204,7 +205,7 @@ UTEST(InterpreterTests, combination_multiple_signs)
     TestResult result = calc(test_expr, sizeof(test_expr));
     ASSERT_FALSE(result.error);
     ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
-    ASSERT_EQ(result.answer.as.i_val, 17.0);
+    ASSERT_TRUE(fabs(17.0 - result.answer.as.f_val) < 0.0001);
 }
 
 // Test Parentheses: One ()
@@ -225,7 +226,7 @@ UTEST(InterpreterTests, parentheses_multiple)
     TestResult result = calc(test_expr, sizeof(test_expr));
     ASSERT_FALSE(result.error);
     ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
-    ASSERT_EQ(result.answer.as.i_val, 10.0);
+    ASSERT_TRUE(fabs(10.0 - result.answer.as.f_val) < 0.0001);
 }
 
 // Test Unary Operations: Simple Operaton
