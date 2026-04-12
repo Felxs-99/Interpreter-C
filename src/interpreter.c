@@ -20,20 +20,17 @@ static ASTNode *term(Interpreter *interpret);
 static ASTNode *factor(Interpreter *interpret);
 
 // Interpreter function prototypes
-static void set_variable(Interpreter *interpret, const char *name, int value);
-static int get_variable(Interpreter *interpret, const char *name);
+static void set_variable(Interpreter *interpret, const char *name, Value value);
+static Value get_variable(Interpreter *interpret, const char *name);
 void set_math_const(Interpreter *interpret);
 
 // Helper function prototypes
-static uint8_t convert_char(char character);
-static bool multiple_digit_number(int *number, int digit_to_add);
-static void make_single_char_token(Interpreter *interpret, token_types type,
-                                   int value);
+static void make_single_char_token(Interpreter *interpret, token_types type);
 static void set_error_state(Interpreter *interpret);
 static bool is_additive_op(token_types type);
 static bool is_multiplicative_op(token_types type);
 static bool is_assign_op(token_types type);
-static void set_constant(Interpreter *interpret, const char *name, int value);
+static void set_constant(Interpreter *interpret, const char *name, Value value);
 
 /*
  * ####################
@@ -227,6 +224,12 @@ static ASTNode *factor(Interpreter *interpret)
         eat(INT, interpret);
         return create_num_node(token);
     }
+    // For decimal values
+    else if (token.type == FLOAT)
+    {
+        eat(FLOAT, interpret);
+        return create_num_node(token);
+    }
     // For parentheses
     else if (token.type == LPAREN)
     {
@@ -368,29 +371,29 @@ void get_next_token(Interpreter *interpret)
     switch (current_char)
     {
         case '+':
-            make_single_char_token(interpret, PLUS, 0);
+            make_single_char_token(interpret, PLUS);
             return;
         case '-':
-            make_single_char_token(interpret, MINUS, 0);
+            make_single_char_token(interpret, MINUS);
             return;
         case '*':
-            make_single_char_token(interpret, MUL, 0);
+            make_single_char_token(interpret, MUL);
             return;
         case '/':
-            make_single_char_token(interpret, DIV, 0);
+            make_single_char_token(interpret, DIV);
             return;
         case '(':
-            make_single_char_token(interpret, LPAREN, 0);
+            make_single_char_token(interpret, LPAREN);
             return;
         case ')':
-            make_single_char_token(interpret, RPAREN, 0);
+            make_single_char_token(interpret, RPAREN);
             return;
         case '=':
-            make_single_char_token(interpret, ASSIGN, 0);
+            make_single_char_token(interpret, ASSIGN);
             return;
         case '\n':
         case '\0':
-            make_single_char_token(interpret, EOL, 0);
+            make_single_char_token(interpret, EOL);
             return;
         default:
             break;
@@ -537,30 +540,38 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
 
         case NODE_UNAOP:
         {
-            int expr_val = evaluate(node->right, interpret);
+            Value expr_val = evaluate(node->right, interpret);
             if (interpret->error_found)
                 return (Value){VAL_INT, {.i_val = 0}};
 
             if (node->token.type == PLUS)
             {
-                return +expr_val;
+                return expr_val;
             }
             else if (node->token.type == MINUS)
             {
-                if (expr_val == (INT_MIN))
+                if (expr_val.type == VAL_INT)
                 {
-                    printf("Runtime Error: Integer Overflow\n");
-                    set_error_state(interpret);
-                    return (Value){VAL_INT, {.i_val = 0}};
+
+                    if (expr_val.as.i_val == (INT_MIN))
+                    {
+                        printf("Runtime Error: Integer Overflow\n");
+                        set_error_state(interpret);
+                        return (Value){VAL_INT, {.i_val = 0}};
+                    }
+                    return (Value){VAL_INT, {.i_val = -expr_val.as.i_val}};
                 }
-                return -expr_val;
+                else if (expr_val.type == VAL_FLOAT)
+                {
+                    return (Value){VAL_FLOAT, {.f_val = -expr_val.as.f_val}};
+                }
             }
-            return 0;
+            return (Value){VAL_INT, {.i_val = 0}};
         }
 
         case NODE_ASSIGN:
         {
-            int left_val = evaluate(node->right, interpret);
+            Value left_val = evaluate(node->right, interpret);
             set_variable(interpret, node->left->token.name, left_val);
             return left_val;
         }
@@ -570,8 +581,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
             return get_variable(interpret, node->token.name);
         }
     }
-}
-return (Value){VAL_INT, {.i_val = 0}};
+    return (Value){VAL_INT, {.i_val = 0}};
 }
 
 // Initialize the interpreter struct
@@ -601,7 +611,7 @@ void init_interpreter(Interpreter *interpret)
 void set_math_const(Interpreter *interpret)
 {
     // ATM only for proofe of concept, needs float to be useful
-    set_constant(interpret, "e", 2);
+    set_constant(interpret, "e", (Value){VAL_FLOAT, {.f_val = 2.718282}});
 }
 
 // Resets the parser for a brand new line of text
@@ -624,7 +634,7 @@ void free_interpreter(Interpreter *interpret)
 }
 
 // Check if a variable name is already known and if not save it as a new name
-static void set_variable(Interpreter *interpret, const char *name, int value)
+static void set_variable(Interpreter *interpret, const char *name, Value value)
 {
     // Check if the variable already exist and if yes update it
     for (unsigned int i = 0; i < interpret->var_count; i++)
@@ -665,7 +675,7 @@ static void set_variable(Interpreter *interpret, const char *name, int value)
 }
 
 // Check if a variable exists in the symbol table and if yes returns the value
-static int get_variable(Interpreter *interpret, const char *name)
+static Value get_variable(Interpreter *interpret, const char *name)
 {
     for (unsigned int i = 0; i < interpret->var_count; i++)
     {
@@ -677,7 +687,7 @@ static int get_variable(Interpreter *interpret, const char *name)
 
     printf("Runtime Error: Variable '%s' is not defined!\n", name);
     set_error_state(interpret);
-    return 0;
+    return (Value){VAL_INT, {.i_val = 0}};
 }
 
 /*
@@ -686,12 +696,11 @@ static int get_variable(Interpreter *interpret, const char *name)
  * ####################
  */
 // Helper functiion for adding single characters to a token
-static void make_single_char_token(Interpreter *interpret, token_types type,
-                                   int value)
+static void make_single_char_token(Interpreter *interpret, token_types type)
 {
     Token token = {0};
     token.type = type;
-    token.value = value;
+    token.value = (Value){VAL_INT, {.i_val = 0}};
 
     // Save to the interpreter state
     interpret->current_token = token;
@@ -705,7 +714,7 @@ static void set_error_state(Interpreter *interpret)
 {
     interpret->error_found = true;
     interpret->current_token.type = ERROR;
-    interpret->current_token.value = 0;
+    interpret->current_token.value = (Value){VAL_INT, {.i_val = 0}};
 }
 
 // Check if its a plus or minus operator
@@ -723,34 +732,11 @@ static bool is_multiplicative_op(token_types type)
 // Check if its an assign operation
 static bool is_assign_op(token_types type) { return (bool)(type == ASSIGN); }
 // Converts a single digit into a uint8_t number
-static uint8_t convert_char(char character)
-{
-    return (uint8_t)(character - '0');
-}
-
-// Check if the next lower digit can be added and do it, if its possible
-static bool multiple_digit_number(int *number, int digit_to_add)
-{
-    int result = *number;
-    // Check if it can be shiftet to the left (base 10 shift)
-    if (SAFE_MUL(*number, 10, &result))
-    {
-        return false;
-    }
-    // Check if the digit can be added
-    if (SAFE_ADD(result, digit_to_add, &result))
-    {
-        return false;
-    }
-    *number = result;
-    return true;
-}
 
 // Safely injects a locked constant into the memory bank
-static void set_constant(Interpreter *interpret, const char *name, int value)
+static void set_constant(Interpreter *interpret, const char *name, Value value)
 {
     set_variable(interpret, name, value);
-
     int index = interpret->var_count - 1;
     interpret->variables[index].is_const = true;
 }

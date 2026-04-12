@@ -47,10 +47,17 @@ int main()
 
         if (!interpret.error_found)
         {
-            int final_answer = evaluate(tree, &interpret);
+            Value final_answer = evaluate(tree, &interpret);
             if (!interpret.error_found)
             {
-                printf("%d\n", final_answer);
+                if (final_answer.type == VAL_INT)
+                {
+                    printf("%d\n", final_answer.as.i_val);
+                }
+                else if (final_answer.type == VAL_FLOAT)
+                {
+                    printf("%f\n", final_answer.as.f_val);
+                }
             }
         }
 
