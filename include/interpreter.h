@@ -31,6 +31,7 @@ typedef struct
 {
     char name[NAME_LENGTH];
     int value;
+    bool is_const;
 } Variable;
 
 // Token struct

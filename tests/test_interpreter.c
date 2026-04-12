@@ -25,12 +25,49 @@ TestResult calc(char *math_string, size_t length)
         if (!interpret.error_found)
         {
             free_ast(tree);
+            free_interpreter(&interpret);
             return (TestResult){.answer = final_answer, .error = false};
         }
     }
     // If an error was found return 0 and error true
     free_ast(tree);
+    free_interpreter(&interpret);
     return (TestResult){.answer = 0, .error = true};
+}
+
+// Runs an array of strings through a single interpreter state
+TestResult calc_script(const char **lines, int line_count)
+{
+    Interpreter interpret = {0};
+    init_interpreter(&interpret);
+    int final_answer = 0;
+    for (int i = 0; i < line_count; i++)
+    {
+        reset_interpreter_line(&interpret, (char *)lines[i]);
+        get_next_token(&interpret);
+        ASTNode *tree = statement(&interpret);
+
+        if (interpret.error_found)
+        {
+            free_ast(tree);
+            free_interpreter(&interpret);
+            return (TestResult){.answer = 0, .error = true};
+        }
+
+        final_answer = evaluate(tree, &interpret);
+
+        if (interpret.error_found)
+        {
+            free_ast(tree);
+            free_interpreter(&interpret);
+            return (TestResult){.answer = 0, .error = true};
+        }
+
+        free_ast(tree);
+    }
+
+    free_interpreter(&interpret);
+    return (TestResult){.answer = final_answer, .error = false};
 }
 
 // Test Addition : Simplest case
@@ -183,6 +220,50 @@ UTEST(InterpreterTests, unary_operator_complex)
     char test_expr[] = "10 * - 1 + -2 * (13 ++2)";
     TestResult result = calc(test_expr, sizeof(test_expr));
     ASSERT_EQ(result.answer, -40);
+    ASSERT_FALSE(result.error);
+}
+
+// Test Variables: Assign a value to a variable
+UTEST(InterpreterTests, variable_assignment_simple)
+{
+    const char *test_script[] = {"x = 10", "x"};
+
+    TestResult result = calc_script(test_script, 2);
+
+    ASSERT_EQ(result.answer, 10);
+    ASSERT_FALSE(result.error);
+}
+
+// Test Variables: Assign a complex expression a variable
+UTEST(InterpreterTests, variable_assignment_complex)
+{
+    const char *test_script[] = {"x = (2+3)*100 - 5", "x"};
+
+    TestResult result = calc_script(test_script, 2);
+
+    ASSERT_EQ(result.answer, 495);
+    ASSERT_FALSE(result.error);
+}
+
+// Test Variables: Calculate with a single variable
+UTEST(InterpreterTests, variable_calculate_single)
+{
+    const char *test_script[] = {"x = 10", "x * 100"};
+
+    TestResult result = calc_script(test_script, 2);
+
+    ASSERT_EQ(result.answer, 1000);
+    ASSERT_FALSE(result.error);
+}
+
+// Test Variables: Calculate with a multiple variable
+UTEST(InterpreterTests, variable_calculate_multiple)
+{
+    const char *test_script[] = {"x = 10", "y = 20", "x + y"};
+
+    TestResult result = calc_script(test_script, 3);
+
+    ASSERT_EQ(result.answer, 30);
     ASSERT_FALSE(result.error);
 }
 

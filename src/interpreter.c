@@ -1,6 +1,7 @@
 #include "interpreter.h"
 #include "overflow.h"
 #include <ctype.h>
+#include <iso646.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -21,6 +22,7 @@ static ASTNode *factor(Interpreter *interpret);
 // Interpreter function prototypes
 static void set_variable(Interpreter *interpret, const char *name, int value);
 static int get_variable(Interpreter *interpret, const char *name);
+void set_math_const(Interpreter *interpret);
 
 // Helper function prototypes
 static uint8_t convert_char(char character);
@@ -31,6 +33,8 @@ static void set_error_state(Interpreter *interpret);
 static bool is_additive_op(token_types type);
 static bool is_multiplicative_op(token_types type);
 static bool is_assign_op(token_types type);
+static void set_constant(Interpreter *interpret, const char *name, int value);
+
 /*
  * ####################
  * #     PARSER       #
@@ -509,6 +513,14 @@ void init_interpreter(Interpreter *interpret)
         interpret->error_found = true;
         return;
     }
+    set_math_const(interpret);
+}
+
+// Set mathematical constants in the interpreter.
+void set_math_const(Interpreter *interpret)
+{
+    // ATM only for proofe of concept, needs float to be useful
+    set_constant(interpret, "e", 2);
 }
 
 // Resets the parser for a brand new line of text
@@ -538,6 +550,13 @@ static void set_variable(Interpreter *interpret, const char *name, int value)
     {
         if (strcmp(interpret->variables[i].name, name) == 0)
         {
+            if (interpret->variables[i].is_const)
+            {
+                printf("Runtime Error: %s is a constant!\n",
+                       interpret->variables[i].name);
+                set_error_state(interpret);
+                return;
+            }
             interpret->variables[i].value = value;
             return;
         }
@@ -560,6 +579,7 @@ static void set_variable(Interpreter *interpret, const char *name, int value)
     unsigned int index = interpret->var_count;
     strcpy(interpret->variables[index].name, name);
     interpret->variables[index].value = value;
+    interpret->variables[index].is_const = false;
     interpret->var_count++;
 }
 
@@ -643,4 +663,13 @@ static bool multiple_digit_number(int *number, int digit_to_add)
     }
     *number = result;
     return true;
+}
+
+// Safely injects a locked constant into the memory bank
+static void set_constant(Interpreter *interpret, const char *name, int value)
+{
+    set_variable(interpret, name, value);
+
+    int index = interpret->var_count - 1;
+    interpret->variables[index].is_const = true;
 }
