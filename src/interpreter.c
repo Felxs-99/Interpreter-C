@@ -281,26 +281,53 @@ void get_next_token(Interpreter *interpret)
     }
 
     // Check if its a digit
-    if (isdigit(current_char))
+    if (isdigit(current_char) || (current_char == '.'))
     {
-        token.type = INT;
-        token.value = convert_char(current_char);
-        interpret->position++;
-
+        char temp_num[64] = {0};
+        unsigned int temp_pos = 0;
+        bool has_decimal = false;
         // Get every following digit and make it one number
-        while (isdigit(interpret->buffer[interpret->position]))
+        while (isdigit(interpret->buffer[interpret->position]) ||
+               interpret->buffer[interpret->position] == '.')
         {
-            if (!multiple_digit_number(
-                    &token.value,
-                    convert_char(interpret->buffer[interpret->position])))
+            char c = interpret->buffer[interpret->position];
+
+            // Check for decimal point
+            if (c == '.')
             {
-                printf("Syntax Error: The number starting with '%d...' is too "
-                       "large!\n",
-                       token.value);
+                if (has_decimal)
+                {
+                    printf("Syntax Error: Multiple decimal points!\n");
+                    set_error_state(interpret);
+                    return;
+                }
+
+                has_decimal = true;
+            }
+            // Prevent temp buffer overflow
+            if (temp_pos >= 64)
+            {
+                printf("Value Error: Given Number is too long!\n");
                 set_error_state(interpret);
                 return;
             }
+
+            temp_num[temp_pos++] = c;
+
             interpret->position++;
+        }
+
+        temp_num[temp_pos] = '\0';
+
+        if (has_decimal)
+        {
+            token.type = FLOAT;
+            token.value.as.f_val = strtod(temp_num, NULL);
+        }
+        else
+        {
+            token.type = INT;
+            token.value.as.i_val = atoi(temp_num);
         }
 
         interpret->current_token = token;
@@ -381,12 +408,12 @@ void get_next_token(Interpreter *interpret)
  * ####################
  */
 // Rcursively walks the AST and calculates the result
-int evaluate(ASTNode *node, Interpreter *interpret)
+Value evaluate(ASTNode *node, Interpreter *interpret)
 {
     // If an error was found return 0
     if (node == NULL || interpret->error_found)
     {
-        return 0;
+        return (Value){VAL_INT, {.i_val = 0}};
     }
 
     // Determine what kinde of node it is
@@ -397,69 +424,122 @@ int evaluate(ASTNode *node, Interpreter *interpret)
 
         case NODE_BINOP:
         {
-            int left_val = evaluate(node->left, interpret);
-            int right_val = evaluate(node->right, interpret);
-            int result = 0;
+            Value left_val = evaluate(node->left, interpret);
+            Value right_val = evaluate(node->right, interpret);
 
             if (interpret->error_found)
-                return 0;
-            if (node->token.type == PLUS)
-            {
-                if (SAFE_ADD(left_val, right_val, &result))
-                {
-                    printf("Runtime Error: Integer Overflow or Underflow\n");
-                    set_error_state(interpret);
-                    return 0;
-                }
+                return (Value){VAL_INT, {.i_val = 0}};
 
-                return result;
-            }
-            else if (node->token.type == MINUS)
+            if (left_val.type == VAL_INT && right_val.type == VAL_INT)
             {
-                if (SAFE_SUB(left_val, right_val, &result))
+                Value result = {VAL_INT, {.i_val = 0}};
+                if (node->token.type == PLUS)
                 {
-                    printf("Runtime Error: Integer Overflow or Underflow\n");
-                    set_error_state(interpret);
-                    return 0;
-                }
-                return result;
-            }
-            else if (node->token.type == MUL)
-            {
-                if (SAFE_MUL(left_val, right_val, &result))
-                {
-                    printf("Runtime Error: Integer Overflow or Underflow\n");
-                    set_error_state(interpret);
-                    return 0;
-                }
-                return result;
-            }
-            else if (node->token.type == DIV)
-            {
-                // The Division-by-Zero check returns!
-                if (right_val == 0)
-                {
-                    printf("Runtime Error: Division by zero\n");
-                    set_error_state(interpret);
-                    return 0;
-                }
+                    if (SAFE_ADD(left_val.as.i_val, right_val.as.i_val,
+                                 &result.as.i_val))
+                    {
+                        printf(
+                            "Runtime Error: Integer Overflow or Underflow\n");
+                        set_error_state(interpret);
+                        return (Value){VAL_INT, {.i_val = 0}};
+                    }
 
-                if (left_val == INT_MIN && right_val == -1)
-                {
-                    printf("Runtime Error: Integer Overflow\n");
-                    set_error_state(interpret);
-                    return 0;
+                    return result;
                 }
-                return left_val / right_val;
+                else if (node->token.type == MINUS)
+                {
+                    if (SAFE_SUB(left_val.as.i_val, right_val.as.i_val,
+                                 &result.as.i_val))
+                    {
+                        printf(
+                            "Runtime Error: Integer Overflow or Underflow\n");
+                        set_error_state(interpret);
+                        return (Value){VAL_INT, {.i_val = 0}};
+                    }
+                    return result;
+                }
+                else if (node->token.type == MUL)
+                {
+                    if (SAFE_MUL(left_val.as.i_val, right_val.as.i_val,
+                                 &result.as.i_val))
+                    {
+                        printf(
+                            "Runtime Error: Integer Overflow or Underflow\n");
+                        set_error_state(interpret);
+                        return (Value){VAL_INT, {.i_val = 0}};
+                    }
+                    return result;
+                }
+                else if (node->token.type == DIV)
+                {
+                    // The Division-by-Zero check returns!
+                    if (right_val.as.i_val == 0)
+                    {
+                        printf("Runtime Error: Division by zero\n");
+                        set_error_state(interpret);
+                        return (Value){VAL_INT, {.i_val = 0}};
+                    }
+
+                    if (left_val.as.i_val == INT_MIN &&
+                        right_val.as.i_val == -1)
+                    {
+                        printf("Runtime Error: Integer Overflow\n");
+                        set_error_state(interpret);
+                        return (Value){VAL_INT, {.i_val = 0}};
+                    }
+                    double l_num = (double)left_val.as.i_val;
+                    double r_num = (double)right_val.as.i_val;
+                    return (Value){VAL_FLOAT, {.f_val = l_num / r_num}};
+                }
             }
-            break;
+            else
+            {
+                // If one is an INT, cast it to a double!
+                double l_num = (left_val.type == VAL_FLOAT)
+                                   ? left_val.as.f_val
+                                   : (double)left_val.as.i_val;
+                double r_num = (right_val.type == VAL_FLOAT)
+                                   ? right_val.as.f_val
+                                   : (double)right_val.as.i_val;
+
+                Value result = {VAL_FLOAT, {.f_val = 0.0}};
+
+                if (node->token.type == PLUS)
+                {
+                    result.as.f_val = l_num + r_num;
+                    return result;
+                }
+                else if (node->token.type == MINUS)
+                {
+                    result.as.f_val = l_num - r_num;
+                    return result;
+                }
+                else if (node->token.type == MUL)
+                {
+                    result.as.f_val = l_num * r_num;
+                    return result;
+                }
+                else if (node->token.type == DIV)
+                {
+                    if (r_num == 0.0)
+                    {
+                        printf("Runtime Error: Division by zero\n");
+                        interpret->error_found = true;
+                        return (Value){VAL_INT, {.i_val = 0}};
+                    }
+                    result.as.f_val = l_num / r_num;
+                    return result;
+                }
+            }
+
+            return (Value){VAL_INT, {.i_val = 0}};
         }
 
         case NODE_UNAOP:
         {
             int expr_val = evaluate(node->right, interpret);
             if (interpret->error_found)
-                return 0;
+                return (Value){VAL_INT, {.i_val = 0}};
 
             if (node->token.type == PLUS)
             {
@@ -471,7 +551,7 @@ int evaluate(ASTNode *node, Interpreter *interpret)
                 {
                     printf("Runtime Error: Integer Overflow\n");
                     set_error_state(interpret);
-                    return 0;
+                    return (Value){VAL_INT, {.i_val = 0}};
                 }
                 return -expr_val;
             }
@@ -490,7 +570,8 @@ int evaluate(ASTNode *node, Interpreter *interpret)
             return get_variable(interpret, node->token.name);
         }
     }
-    return 0;
+}
+return (Value){VAL_INT, {.i_val = 0}};
 }
 
 // Initialize the interpreter struct

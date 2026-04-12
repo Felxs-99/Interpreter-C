@@ -7,11 +7,28 @@
 #include <stdio.h>
 #include <string.h>
 
+typedef enum
+{
+    VAL_INT,
+    VAL_FLOAT
+} ValueType;
+
+typedef struct
+{
+    ValueType type;
+    union
+    {
+        int i_val;
+        double f_val;
+    } as;
+} Value;
+
 // Available operators and EOL -> end of line
 typedef enum
 {
     NONE = 0,
     INT,
+    FLOAT,
     PLUS,
     MINUS,
     MUL,
@@ -30,14 +47,14 @@ typedef enum
 typedef struct
 {
     char name[NAME_LENGTH];
-    int value;
+    Value value;
     bool is_const;
 } Variable;
 
 // Token struct
 typedef struct
 {
-    int value;
+    Value value;
     char name[NAME_LENGTH];
     token_types type;
 } Token;
@@ -77,7 +94,7 @@ typedef struct ASTNode
 // Statement function
 ASTNode *statement(Interpreter *interpret);
 // Evaluate the result
-int evaluate(ASTNode *node, Interpreter *interpret);
+Value evaluate(ASTNode *node, Interpreter *interpret);
 // Clean up the ast in memory
 void free_ast(ASTNode *node);
 
