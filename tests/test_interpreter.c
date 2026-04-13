@@ -296,4 +296,75 @@ UTEST(InterpreterTests, variable_calculate_multiple)
     ASSERT_EQ(result.answer.as.i_val, 30);
 }
 
+// Test Other numerical Bases: Binary numbers
+UTEST(InterpreterTests, other_bases_binary)
+{
+    char test_expr[] = "0b0011";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 3);
+}
+
+// Test Other numerical Bases: Hex numbers
+UTEST(InterpreterTests, other_bases_hex)
+{
+    char test_expr[] = "0xFF";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 255);
+}
+
+// Test Bitwise Operations: Or
+UTEST(InterpreterTests, bitwise_op_or)
+{
+    char test_expr[] = "2|1";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 3);
+}
+
+// Test Bitwise Operations: Xor
+UTEST(InterpreterTests, bitwise_op_xor)
+{
+    char test_expr[] = "3^2";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 1);
+}
+
+// Test Bitwise Operations: And
+UTEST(InterpreterTests, bitwise_op_and)
+{
+    char test_expr[] = "7&3";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 3);
+}
+
+// Test Precedence: Basic level precedence (should be always the last in the
+// file to find it better)
+UTEST(InterpreterTests, basic_precedece)
+{
+    char test_expr[] = "2 | 3 ^ 4 & 5 + 1 * 2";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 7);
+}
+
+// Test Precedence: Advanced level precedence (should be always the last in the
+// file to find it better)
+UTEST(InterpreterTests, advanced_precedence)
+{
+    char test_expr[] = "~(1 ^ 3) & 15 | 8";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 13);
+}
 UTEST_MAIN();

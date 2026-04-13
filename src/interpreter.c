@@ -14,7 +14,10 @@ static ASTNode *create_binop_node(ASTNode *left, Token op, ASTNode *right);
 static ASTNode *create_unaop_node(Token op, ASTNode *right);
 static ASTNode *create_assign_node(ASTNode *left, Token op, ASTNode *right);
 static ASTNode *create_var_node(Token id);
-static bool eat(token_types token, Interpreter *interprete);
+static bool eat(TokenTypes token, Interpreter *interprete);
+static ASTNode *bitwise_or_expr(Interpreter *interpret);
+static ASTNode *bitwise_xor_expr(Interpreter *interpret);
+static ASTNode *bitwise_and_expr(Interpreter *interpret);
 static ASTNode *expr(Interpreter *interpret);
 static ASTNode *term(Interpreter *interpret);
 static ASTNode *factor(Interpreter *interpret);
@@ -25,11 +28,11 @@ static Value get_variable(Interpreter *interpret, const char *name);
 void set_math_const(Interpreter *interpret);
 
 // Helper function prototypes
-static void make_single_char_token(Interpreter *interpret, token_types type);
+static void make_single_char_token(Interpreter *interpret, TokenTypes type);
 static void set_error_state(Interpreter *interpret);
-static bool is_additive_op(token_types type);
-static bool is_multiplicative_op(token_types type);
-static bool is_assign_op(token_types type);
+static bool is_additive_op(TokenTypes type);
+static bool is_multiplicative_op(TokenTypes type);
+static bool is_assign_op(TokenTypes type);
 static void set_constant(Interpreter *interpret, const char *name, Value value);
 static char peek(Interpreter *interpret);
 
@@ -105,7 +108,7 @@ void free_ast(ASTNode *node)
 }
 
 // Eat the provided token
-static bool eat(token_types token, Interpreter *interpret)
+static bool eat(TokenTypes token, Interpreter *interpret)
 {
     if (interpret->current_token.type == token)
     {
@@ -117,7 +120,7 @@ static bool eat(token_types token, Interpreter *interpret)
 
 ASTNode *statement(Interpreter *interpret)
 {
-    ASTNode *left_node = expr(interpret);
+    ASTNode *left_node = bitwise_or_expr(interpret);
     Token token = {};
 
     // Stop evaluating if a syntax error was found in expr()
@@ -145,13 +148,81 @@ ASTNode *statement(Interpreter *interpret)
             return NULL;
         }
 
-        // Grab the right side as a node
-        ASTNode *right_node = expr(interpret);
+        ASTNode *right_node = bitwise_or_expr(interpret);
 
         return create_assign_node(left_node, token, right_node);
     }
 
     // No assigment was used, just return the node from expr
+    return left_node;
+}
+// Evaluate the bitwise or expression
+static ASTNode *bitwise_or_expr(Interpreter *interpret)
+{
+
+    ASTNode *left_node = bitwise_xor_expr(interpret);
+    Token token = {0};
+
+    while (interpret->current_token.type == BIT_OR)
+    {
+        if (interpret->error_found)
+        {
+            free(left_node);
+            return NULL;
+        }
+
+        token = interpret->current_token;
+        eat(token.type, interpret);
+
+        ASTNode *right_node = bitwise_xor_expr(interpret);
+        left_node = create_binop_node(left_node, token, right_node);
+    }
+    return left_node;
+}
+
+// Evaluate the bitwise xor expression
+static ASTNode *bitwise_xor_expr(Interpreter *interpret)
+{
+    ASTNode *left_node = bitwise_and_expr(interpret);
+    Token token = {0};
+
+    while (interpret->current_token.type == BIT_XOR)
+    {
+        if (interpret->error_found)
+        {
+            free(left_node);
+            return NULL;
+        }
+
+        token = interpret->current_token;
+        eat(token.type, interpret);
+
+        ASTNode *right_node = bitwise_and_expr(interpret);
+        left_node = create_binop_node(left_node, token, right_node);
+    }
+    return left_node;
+}
+
+// Evaluate the bitwise and expression
+static ASTNode *bitwise_and_expr(Interpreter *interpret)
+{
+    ASTNode *left_node = expr(interpret);
+    Token token = {0};
+
+    while (interpret->current_token.type == BIT_AND)
+    {
+        if (interpret->error_found)
+        {
+            free(left_node);
+            return NULL;
+        }
+
+        token = interpret->current_token;
+        eat(token.type, interpret);
+
+        ASTNode *right_node = expr(interpret);
+        left_node = create_binop_node(left_node, token, right_node);
+    }
     return left_node;
 }
 
@@ -172,10 +243,8 @@ static ASTNode *expr(Interpreter *interpret)
         token = interpret->current_token;
         eat(token.type, interpret);
 
-        // Grab the right side as a node
         ASTNode *right_node = term(interpret);
 
-        // Stitch them together instead of doing math
         left_node = create_binop_node(left_node, token, right_node);
     }
     return left_node;
@@ -199,10 +268,8 @@ static ASTNode *term(Interpreter *interpret)
         token = interpret->current_token;
         eat(token.type, interpret);
 
-        // Grab the right side as a node
         ASTNode *right_node = factor(interpret);
 
-        // Stitch them together instead of doing math
         left_node = create_binop_node(left_node, token, right_node);
     }
     return left_node;
@@ -213,7 +280,8 @@ static ASTNode *factor(Interpreter *interpret)
 {
     Token token = interpret->current_token;
     // For unary operators
-    if ((token.type == PLUS) || (token.type == MINUS))
+    if ((token.type == PLUS) || (token.type == MINUS) ||
+        (token.type == BIT_NOT))
     {
         eat(token.type, interpret);
         ASTNode *result = factor(interpret);
@@ -235,7 +303,7 @@ static ASTNode *factor(Interpreter *interpret)
     else if (token.type == LPAREN)
     {
         eat(LPAREN, interpret);
-        ASTNode *result = expr(interpret);
+        ASTNode *result = bitwise_or_expr(interpret);
         if (!eat(RPAREN, interpret))
         {
             printf("Syntax Error: Missing closing ')'\n");
@@ -257,7 +325,7 @@ static ASTNode *factor(Interpreter *interpret)
     }
     else
     {
-        printf("Syntax Error: Expected an Integer, or '('\n");
+        printf("Syntax Error: Expected an Integer, an unary operator or '('\n");
         set_error_state(interpret);
         return NULL;
     }
@@ -457,6 +525,18 @@ void get_next_token(Interpreter *interpret)
         case '=':
             make_single_char_token(interpret, ASSIGN);
             return;
+        case '|':
+            make_single_char_token(interpret, BIT_OR);
+            return;
+        case '&':
+            make_single_char_token(interpret, BIT_AND);
+            return;
+        case '^':
+            make_single_char_token(interpret, BIT_XOR);
+            return;
+        case '~':
+            make_single_char_token(interpret, BIT_NOT);
+            return;
         case '\n':
         case '\0':
             make_single_char_token(interpret, EOL);
@@ -560,6 +640,30 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     double r_num = (double)right_val.as.i_val;
                     return (Value){VAL_FLOAT, {.f_val = l_num / r_num}};
                 }
+                else if (node->token.type == BIT_OR)
+                {
+                    return (Value){
+                        VAL_INT,
+                        {.i_val = left_val.as.i_val | right_val.as.i_val}};
+                }
+                else if (node->token.type == BIT_XOR)
+                {
+                    return (Value){
+                        VAL_INT,
+                        {.i_val = left_val.as.i_val ^ right_val.as.i_val}};
+                }
+                else if (node->token.type == BIT_AND)
+                {
+                    return (Value){
+                        VAL_INT,
+                        {.i_val = left_val.as.i_val & right_val.as.i_val}};
+                }
+                else
+                {
+                    printf("Runtime Error: Unknown operator\n");
+                    set_error_state(interpret);
+                    return (Value){VAL_INT, {.i_val = 0}};
+                }
             }
             else
             {
@@ -599,6 +703,12 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     result.as.f_val = l_num / r_num;
                     return result;
                 }
+                else
+                {
+                    printf("Runtime Error: Unallowed operator\n");
+                    set_error_state(interpret);
+                    return (Value){VAL_INT, {.i_val = 0}};
+                }
             }
 
             return (Value){VAL_INT, {.i_val = 0}};
@@ -630,6 +740,20 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                 else if (expr_val.type == VAL_FLOAT)
                 {
                     return (Value){VAL_FLOAT, {.f_val = -expr_val.as.f_val}};
+                }
+            }
+            else if (node->token.type == BIT_NOT)
+            {
+                if (expr_val.type == VAL_INT)
+                {
+                    return (Value){VAL_INT, {.i_val = ~expr_val.as.i_val}};
+                }
+                else
+                {
+                    printf("Runtime Error: Cannot invert decimal number '%f\n'",
+                           expr_val.as.f_val);
+                    set_error_state(interpret);
+                    return (Value){VAL_INT, {.i_val = 0}};
                 }
             }
             return (Value){VAL_INT, {.i_val = 0}};
@@ -770,7 +894,7 @@ static Value get_variable(Interpreter *interpret, const char *name)
  * ####################
  */
 // Helper functiion for adding single characters to a token
-static void make_single_char_token(Interpreter *interpret, token_types type)
+static void make_single_char_token(Interpreter *interpret, TokenTypes type)
 {
     Token token = {0};
     token.type = type;
@@ -792,19 +916,19 @@ static void set_error_state(Interpreter *interpret)
 }
 
 // Check if its a plus or minus operator
-static bool is_additive_op(token_types type)
+static bool is_additive_op(TokenTypes type)
 {
     return (bool)(type == PLUS || type == MINUS);
 }
 
 // Check if its a multiplication or dividing operator
-static bool is_multiplicative_op(token_types type)
+static bool is_multiplicative_op(TokenTypes type)
 {
     return (bool)(type == MUL || type == DIV);
 }
 
 // Check if its an assign operation
-static bool is_assign_op(token_types type) { return (bool)(type == ASSIGN); }
+static bool is_assign_op(TokenTypes type) { return (bool)(type == ASSIGN); }
 // Converts a single digit into a uint8_t number
 
 // Safely injects a locked constant into the memory bank

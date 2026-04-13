@@ -37,10 +37,14 @@ typedef enum
     RPAREN,
     ID,
     ASSIGN,
+    BIT_OR,
+    BIT_AND,
+    BIT_XOR,
+    BIT_NOT,
     EOL,
     SPACE,
     ERROR,
-} token_types;
+} TokenTypes;
 
 // Max length of the token name
 #define NAME_LENGTH 11
@@ -56,7 +60,7 @@ typedef struct
 {
     Value value;
     char name[NAME_LENGTH];
-    token_types type;
+    TokenTypes type;
 } Token;
 
 typedef struct

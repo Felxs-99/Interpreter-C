@@ -19,8 +19,9 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - [x] Operator Precedence (BODMAS/PEMDAS) — *Done 2026-04-07*
 - [x] Parentheses for nested expressions — *Done 2026-04-07*
 - [x] Floating point numbers (double precision) — *Done 2026-04-12*
-- [ ] Alternative bases (Hexadecimal `0x` and Binary `0b`)
+- [x] Alternative bases (Hexadecimal `0x` and Binary `0b`) — *Done 2026-04-13*
 - [x] Support for variables line `a = 10 * 5` — *Done 2026-04-12*
+- [x] Support for bitwise operations like `|`, `&`, `~` and `^` — *Done 2026-04-13*
 - [ ] Support for build in functions like `sin(90)`
 
 ## 🏗 Engine Architecture
