@@ -23,7 +23,7 @@ typedef struct
     } as;
 } Value;
 
-// Available operators and EOL -> end of line
+// Available token types
 typedef enum
 {
     NONE = 0,

@@ -31,6 +31,7 @@ static bool is_additive_op(token_types type);
 static bool is_multiplicative_op(token_types type);
 static bool is_assign_op(token_types type);
 static void set_constant(Interpreter *interpret, const char *name, Value value);
+static char peek(Interpreter *interpret);
 
 /*
  * ####################
@@ -289,6 +290,69 @@ void get_next_token(Interpreter *interpret)
         char temp_num[64] = {0};
         unsigned int temp_pos = 0;
         bool has_decimal = false;
+
+        // Check if a binary or hex number provided
+        if (current_char == '0')
+        {
+            char next_char = peek(interpret);
+
+            if (next_char == 'b')
+            {
+                interpret->position += 2;
+
+                while (interpret->buffer[interpret->position] == '0' ||
+                       interpret->buffer[interpret->position] == '1')
+                {
+                    temp_num[temp_pos++] =
+                        interpret->buffer[interpret->position++];
+                }
+
+                // Check for invalid characters after the binary number
+                if (isalnum(interpret->buffer[interpret->position]))
+                {
+                    printf("Lexical Error: Invalid character '%c' in binary "
+                           "literal.\n",
+                           interpret->buffer[interpret->position]);
+                    set_error_state(interpret);
+                    return;
+                }
+
+                token.type = INT;
+                token.value.type = VAL_INT;
+                token.value.as.i_val = strtol(temp_num, NULL, 2);
+
+                interpret->current_token = token;
+                return;
+            }
+            else if (next_char == 'x')
+            {
+                interpret->position += 2;
+
+                while (isxdigit(interpret->buffer[interpret->position]))
+                {
+                    temp_num[temp_pos++] =
+                        interpret->buffer[interpret->position++];
+                }
+
+                // Check for invalid characters after the hex number
+                if (isalpha(interpret->buffer[interpret->position]))
+                {
+                    printf("Lexical Error: Invalid character '%c' in hex "
+                           "literal.\n",
+                           interpret->buffer[interpret->position]);
+                    set_error_state(interpret);
+                    return;
+                }
+
+                token.type = INT;
+                token.value.type = VAL_INT;
+                token.value.as.i_val = strtol(temp_num, NULL, 16);
+
+                interpret->current_token = token;
+                return;
+            }
+        }
+
         // Get every following digit and make it one number
         while (isdigit(interpret->buffer[interpret->position]) ||
                interpret->buffer[interpret->position] == '.')
@@ -749,4 +813,15 @@ static void set_constant(Interpreter *interpret, const char *name, Value value)
     set_variable(interpret, name, value);
     int index = interpret->var_count - 1;
     interpret->variables[index].is_const = true;
+}
+
+// Get the next character without increasing the position of the interpreter
+static char peek(Interpreter *interpret)
+{
+    unsigned int position = interpret->position + 1;
+    if (position <= interpret->length)
+    {
+        return interpret->buffer[position];
+    }
+    return '\0';
 }
