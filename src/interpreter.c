@@ -22,6 +22,10 @@ static ASTNode *expr(Interpreter *interpret);
 static ASTNode *term(Interpreter *interpret);
 static ASTNode *factor(Interpreter *interpret);
 
+// Symbol table function prototypes
+static bool lookup_symbol(SymbolTable *symtab, const char *name);
+static void define_symbol(SymbolTable *symtab, const char *name, bool is_const);
+
 // Interpreter function prototypes
 static void set_variable(Interpreter *interpret, const char *name, Value value);
 static Value get_variable(Interpreter *interpret, const char *name);
@@ -29,7 +33,9 @@ void set_math_const(Interpreter *interpret);
 
 // Helper function prototypes
 static void make_single_char_token(Interpreter *interpret, TokenTypes type);
-static void set_error_state(Interpreter *interpret);
+static void set_error_state_interpret(Interpreter *interpret);
+// Helper function to set the error state of the interpreter
+static void set_error_state_symtab(SymbolTable *symtab);
 static bool is_additive_op(TokenTypes type);
 static bool is_multiplicative_op(TokenTypes type);
 static bool is_assign_op(TokenTypes type);
@@ -135,7 +141,7 @@ ASTNode *statement(Interpreter *interpret)
         if (left_node->type != NODE_VAR)
         {
             printf("Syntax Error: You can only assign values to variables.\n");
-            set_error_state(interpret);
+            set_error_state_interpret(interpret);
             free_ast(left_node);
             return NULL;
         }
@@ -143,7 +149,7 @@ ASTNode *statement(Interpreter *interpret)
         if (!eat(ASSIGN, interpret))
         {
             printf("Syntax Error: Only values can be assigned to variables\n");
-            set_error_state(interpret);
+            set_error_state_interpret(interpret);
             free_ast(left_node);
             return NULL;
         }
@@ -307,7 +313,7 @@ static ASTNode *factor(Interpreter *interpret)
         if (!eat(RPAREN, interpret))
         {
             printf("Syntax Error: Missing closing ')'\n");
-            set_error_state(interpret);
+            set_error_state_interpret(interpret);
             free_ast(result);
             return NULL;
         }
@@ -326,7 +332,7 @@ static ASTNode *factor(Interpreter *interpret)
     else
     {
         printf("Syntax Error: Expected an Integer, an unary operator or '('\n");
-        set_error_state(interpret);
+        set_error_state_interpret(interpret);
         return NULL;
     }
 }
@@ -381,7 +387,7 @@ void get_next_token(Interpreter *interpret)
                     printf("Lexical Error: Invalid character '%c' in binary "
                            "literal.\n",
                            interpret->buffer[interpret->position]);
-                    set_error_state(interpret);
+                    set_error_state_interpret(interpret);
                     return;
                 }
 
@@ -408,7 +414,7 @@ void get_next_token(Interpreter *interpret)
                     printf("Lexical Error: Invalid character '%c' in hex "
                            "literal.\n",
                            interpret->buffer[interpret->position]);
-                    set_error_state(interpret);
+                    set_error_state_interpret(interpret);
                     return;
                 }
 
@@ -433,7 +439,7 @@ void get_next_token(Interpreter *interpret)
                 if (has_decimal)
                 {
                     printf("Syntax Error: Multiple decimal points!\n");
-                    set_error_state(interpret);
+                    set_error_state_interpret(interpret);
                     return;
                 }
 
@@ -443,7 +449,7 @@ void get_next_token(Interpreter *interpret)
             if (temp_pos >= 64)
             {
                 printf("Value Error: Given Number is too long!\n");
-                set_error_state(interpret);
+                set_error_state_interpret(interpret);
                 return;
             }
 
@@ -487,7 +493,7 @@ void get_next_token(Interpreter *interpret)
             {
                 printf("Syntax Error: Max length for variables are %d\n",
                        (NAME_LENGTH - 1));
-                set_error_state(interpret);
+                set_error_state_interpret(interpret);
                 return;
             }
 
@@ -547,10 +553,104 @@ void get_next_token(Interpreter *interpret)
 
     // Unknow character
     printf("Syntax Error: Unknown character '%c'\n", current_char);
-    set_error_state(interpret);
+    set_error_state_interpret(interpret);
     return;
 }
 
+/*
+ * ####################
+ * #   Symbol Table   #
+ * ####################
+ */
+
+// Create a symbol table from the ast
+void analyze_tree(ASTNode *node, SymbolTable *symtab)
+{
+    if (node == NULL || symtab->error_found)
+        return;
+
+    switch (node->type)
+    {
+        case NODE_BINOP:
+            analyze_tree(node->left, symtab);
+            analyze_tree(node->right, symtab);
+            break;
+        case NODE_UNAOP:
+            analyze_tree(node->right, symtab);
+            break;
+        case NODE_ASSIGN:
+            // Check if variable exists, if it's constant, or add it to
+            //  SymbolTable
+            analyze_tree(node->right, symtab);
+            define_symbol(symtab, node->token.name, false);
+            break;
+
+        case NODE_VAR:
+            // Look up the variable in the SymbolTable to ensure it was
+            // declared!
+            lookup_symbol(symtab, node->token.name);
+            break;
+
+        // Numbers and Unary ops just pass through or get ignored by the
+        // analyzer
+        default:
+            break;
+    }
+}
+
+// Put a new symbol in the table if it does not exist or is not  const
+static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
+{
+    // Check if the syymbol already exists
+    for (unsigned int i = 0; i < symtab->count; i++)
+    {
+        if (strcmp(name, symtab->symbols[i].name) == 0)
+        {
+            if (symtab->symbols[i].is_const)
+            {
+                printf("Semantic Error: Cannot reassign constant '%s'\n", name);
+                set_error_state_symtab(symtab);
+            }
+
+            return;
+        }
+    }
+    if (symtab->count >= symtab->capacity)
+    {
+        symtab->capacity *= 2;
+        Symbol *new_symbol = (Symbol *)realloc(
+            symtab->symbols, symtab->capacity * sizeof(Symbol));
+
+        if (new_symbol == NULL)
+        {
+            printf(
+                "Fatal Error: Failed to allocate memory for symbol table!\n");
+            set_error_state_symtab(symtab);
+            return;
+        }
+        symtab->symbols = new_symbol;
+    }
+    unsigned int index = symtab->count;
+    strcpy(symtab->symbols[index].name, name);
+    symtab->symbols->is_const = is_const;
+    symtab->count++;
+}
+
+// Check if a symbol is in the symbol table
+static bool lookup_symbol(SymbolTable *symtab, const char *name)
+{
+    for (unsigned int i = 0; i < symtab->count; i++)
+    {
+        if (strcmp(name, symtab->symbols[i].name) == 0)
+        {
+            return true;
+        }
+    }
+
+    printf("Semantic Error: Variable '%s' is not defined!\n", name);
+    symtab->error_found = true;
+    return false;
+}
 /*
  * ####################
  * #    Interpreter   #
@@ -589,7 +689,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     {
                         printf(
                             "Runtime Error: Integer Overflow or Underflow\n");
-                        set_error_state(interpret);
+                        set_error_state_interpret(interpret);
                         return (Value){VAL_INT, {.i_val = 0}};
                     }
 
@@ -602,7 +702,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     {
                         printf(
                             "Runtime Error: Integer Overflow or Underflow\n");
-                        set_error_state(interpret);
+                        set_error_state_interpret(interpret);
                         return (Value){VAL_INT, {.i_val = 0}};
                     }
                     return result;
@@ -614,7 +714,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     {
                         printf(
                             "Runtime Error: Integer Overflow or Underflow\n");
-                        set_error_state(interpret);
+                        set_error_state_interpret(interpret);
                         return (Value){VAL_INT, {.i_val = 0}};
                     }
                     return result;
@@ -625,7 +725,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     if (right_val.as.i_val == 0)
                     {
                         printf("Runtime Error: Division by zero\n");
-                        set_error_state(interpret);
+                        set_error_state_interpret(interpret);
                         return (Value){VAL_INT, {.i_val = 0}};
                     }
 
@@ -633,7 +733,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                         right_val.as.i_val == -1)
                     {
                         printf("Runtime Error: Integer Overflow\n");
-                        set_error_state(interpret);
+                        set_error_state_interpret(interpret);
                         return (Value){VAL_INT, {.i_val = 0}};
                     }
                     double l_num = (double)left_val.as.i_val;
@@ -661,7 +761,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                 else
                 {
                     printf("Runtime Error: Unknown operator\n");
-                    set_error_state(interpret);
+                    set_error_state_interpret(interpret);
                     return (Value){VAL_INT, {.i_val = 0}};
                 }
             }
@@ -706,7 +806,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                 else
                 {
                     printf("Runtime Error: Unallowed operator\n");
-                    set_error_state(interpret);
+                    set_error_state_interpret(interpret);
                     return (Value){VAL_INT, {.i_val = 0}};
                 }
             }
@@ -732,7 +832,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     if (expr_val.as.i_val == (INT_MIN))
                     {
                         printf("Runtime Error: Integer Overflow\n");
-                        set_error_state(interpret);
+                        set_error_state_interpret(interpret);
                         return (Value){VAL_INT, {.i_val = 0}};
                     }
                     return (Value){VAL_INT, {.i_val = -expr_val.as.i_val}};
@@ -752,7 +852,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                 {
                     printf("Runtime Error: Cannot invert decimal number '%f\n'",
                            expr_val.as.f_val);
-                    set_error_state(interpret);
+                    set_error_state_interpret(interpret);
                     return (Value){VAL_INT, {.i_val = 0}};
                 }
             }
@@ -783,12 +883,12 @@ void init_interpreter(Interpreter *interpret)
     interpret->current_token = (Token){0};
     interpret->error_found = false;
 
-    interpret->var_count = 0;
-    interpret->var_capacity = 8;
+    interpret->mem_count = 0;
+    interpret->mem_capacity = 8;
 
-    interpret->variables = malloc(interpret->var_capacity * sizeof(Variable));
+    interpret->memory = malloc(interpret->mem_capacity * sizeof(MemorySlot));
 
-    if (interpret->variables == NULL)
+    if (interpret->memory == NULL)
     {
         printf("Fatal Error: Failed to allocate memory for variables!\n");
         interpret->error_found = true;
@@ -825,66 +925,58 @@ void reset_interpreter_line(Interpreter *interpret, char *buffer)
 // Free the allocated memory of the variable structur in the interpreter
 void free_interpreter(Interpreter *interpret)
 {
-    free(interpret->variables);
-    interpret->variables = NULL;
-    interpret->var_count = 0;
-    interpret->var_capacity = 0;
+    free(interpret->memory);
+    interpret->memory = NULL;
+    interpret->mem_count = 0;
+    interpret->mem_capacity = 0;
 }
 
 // Check if a variable name is already known and if not save it as a new name
 static void set_variable(Interpreter *interpret, const char *name, Value value)
 {
     // Check if the variable already exist and if yes update it
-    for (unsigned int i = 0; i < interpret->var_count; i++)
+    for (unsigned int i = 0; i < interpret->mem_count; i++)
     {
-        if (strcmp(interpret->variables[i].name, name) == 0)
+        if (strcmp(interpret->memory[i].name, name) == 0)
         {
-            if (interpret->variables[i].is_const)
-            {
-                printf("Runtime Error: %s is a constant!\n",
-                       interpret->variables[i].name);
-                set_error_state(interpret);
-                return;
-            }
-            interpret->variables[i].value = value;
+            interpret->memory[i].value = value;
             return;
         }
     }
 
-    if (interpret->var_count >= interpret->var_capacity)
+    if (interpret->mem_count >= interpret->mem_capacity)
     {
-        interpret->var_capacity *= 2;
-        Variable *new_memory = (Variable *)realloc(
-            interpret->variables, interpret->var_capacity * sizeof(Variable));
+        interpret->mem_capacity *= 2;
+        MemorySlot *new_memory = (MemorySlot *)realloc(
+            interpret->memory, interpret->mem_capacity * sizeof(MemorySlot));
 
         if (new_memory == NULL)
         {
             printf("Fatal Error: Failed to allocate memory for variables!\n");
-            set_error_state(interpret);
+            set_error_state_interpret(interpret);
             return;
         }
-        interpret->variables = new_memory;
+        interpret->memory = new_memory;
     }
-    unsigned int index = interpret->var_count;
-    strcpy(interpret->variables[index].name, name);
-    interpret->variables[index].value = value;
-    interpret->variables[index].is_const = false;
-    interpret->var_count++;
+    unsigned int index = interpret->mem_count;
+    strcpy(interpret->memory[index].name, name);
+    interpret->memory[index].value = value;
+    interpret->mem_count++;
 }
 
 // Check if a variable exists in the symbol table and if yes returns the value
 static Value get_variable(Interpreter *interpret, const char *name)
 {
-    for (unsigned int i = 0; i < interpret->var_count; i++)
+    for (unsigned int i = 0; i < interpret->mem_count; i++)
     {
-        if (strcmp(interpret->variables[i].name, name) == 0)
+        if (strcmp(interpret->memory[i].name, name) == 0)
         {
-            return interpret->variables[i].value;
+            return interpret->memory[i].value;
         }
     }
 
     printf("Runtime Error: Variable '%s' is not defined!\n", name);
-    set_error_state(interpret);
+    set_error_state_interpret(interpret);
     return (Value){VAL_INT, {.i_val = 0}};
 }
 
@@ -907,12 +999,18 @@ static void make_single_char_token(Interpreter *interpret, TokenTypes type)
     interpret->position++;
 }
 
-// Helper function to set the error state
-static void set_error_state(Interpreter *interpret)
+// Helper function to set the error state of the interpreter
+static void set_error_state_interpret(Interpreter *interpret)
 {
     interpret->error_found = true;
     interpret->current_token.type = ERROR;
     interpret->current_token.value = (Value){VAL_INT, {.i_val = 0}};
+}
+
+// Helper function to set the error state of the symbol table
+static void set_error_state_symtab(SymbolTable *symtab)
+{
+    symtab->error_found = true;
 }
 
 // Check if its a plus or minus operator
@@ -935,8 +1033,6 @@ static bool is_assign_op(TokenTypes type) { return (bool)(type == ASSIGN); }
 static void set_constant(Interpreter *interpret, const char *name, Value value)
 {
     set_variable(interpret, name, value);
-    int index = interpret->var_count - 1;
-    interpret->variables[index].is_const = true;
 }
 
 // Get the next character without increasing the position of the interpreter

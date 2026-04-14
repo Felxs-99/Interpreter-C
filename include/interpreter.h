@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <string.h>
 
+// Max length of the variable name
+#define NAME_LENGTH 11
+
 typedef enum
 {
     VAL_INT,
@@ -46,15 +49,6 @@ typedef enum
     ERROR,
 } TokenTypes;
 
-// Max length of the token name
-#define NAME_LENGTH 11
-typedef struct
-{
-    char name[NAME_LENGTH];
-    Value value;
-    bool is_const;
-} Variable;
-
 // Token struct
 typedef struct
 {
@@ -63,6 +57,30 @@ typedef struct
     TokenTypes type;
 } Token;
 
+// Represents a declared variable
+typedef struct
+{
+    char name[NAME_LENGTH];
+    bool is_const;
+} Symbol;
+
+// The Semantic Analyzer's memory, aka symbol table
+typedef struct
+{
+    Symbol *symbols;
+    unsigned int count;
+    unsigned int capacity;
+    bool error_found;
+} SymbolTable;
+
+// Represents a runtime value in memory
+typedef struct
+{
+    char name[NAME_LENGTH];
+    Value value;
+} MemorySlot;
+
+// Run-time evaluator
 typedef struct
 {
     char *buffer;
@@ -71,9 +89,9 @@ typedef struct
     Token current_token;
     bool error_found;
 
-    Variable *variables;
-    unsigned int var_count;
-    unsigned int var_capacity;
+    MemorySlot *memory;
+    unsigned int mem_count;
+    unsigned int mem_capacity;
 } Interpreter;
 
 // Ast node types
