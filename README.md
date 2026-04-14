@@ -23,7 +23,7 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - [x] Support for variables line `a = 10 * 5` — *Done 2026-04-12*
 - [x] Support for bitwise operations like `|`, `&`, `~` and `^` — *Done 2026-04-13*
 - [ ] Support for build in functions like `sin(90)`
-- [ ] Semantic Analysis & Symbol Table: Introduce a compile-time analyzer phase to verify variable declarations and enforce rules before the run-time evaluator executes.
+- [ ] Semantic Analysis & Symbol Table: Introduce a compile-time analyzer phase to enforce rules before the run-time evaluator executes.
 - [ ] Professional Error Reporting: Add line and column tracking to the Lexer to provide Clang-style, exact-location syntax diagnostics.
 - [ ] Functions & The Call Stack: Upgrade the global memory architecture into a Stack of Activation Records to support local scoping and custom function calls.
 

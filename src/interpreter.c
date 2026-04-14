@@ -39,8 +39,26 @@ static void set_error_state_symtab(SymbolTable *symtab);
 static bool is_additive_op(TokenTypes type);
 static bool is_multiplicative_op(TokenTypes type);
 static bool is_assign_op(TokenTypes type);
-static void set_constant(Interpreter *interpret, const char *name, Value value);
 static char peek(Interpreter *interpret);
+
+// Structure for math constants (to be in one place)
+typedef struct
+{
+    const char *name;
+    Value value;
+} BuiltinConstant;
+
+// The Single Source of Truth for all math constants!
+static const BuiltinConstant BUILTIN_CONSTANTS[] = {
+    {"e", {VAL_FLOAT, {.f_val = 2.718282}}},
+    {"pi", {VAL_FLOAT, {.f_val = 3.141593}}},
+    {"c", {VAL_INT, {.i_val = 299792458}}},
+    {"ep", {VAL_FLOAT, {.f_val = 8.854188}}},
+    {"mu", {VAL_FLOAT, {.f_val = 1.256637}}}};
+
+// Calculate how many items are in the list automatically
+static const unsigned int NUM_BUILTINS =
+    sizeof(BUILTIN_CONSTANTS) / sizeof(BUILTIN_CONSTANTS[0]);
 
 /*
  * ####################
@@ -651,6 +669,15 @@ static bool lookup_symbol(SymbolTable *symtab, const char *name)
     symtab->error_found = true;
     return false;
 }
+
+void init_builtin_symbols(SymbolTable *symtab)
+{
+    for (unsigned int i = 0; i < NUM_BUILTINS; i++)
+    {
+        // Add the name, and lock it as a constant (true)
+        define_symbol(symtab, BUILTIN_CONSTANTS[i].name, true);
+    }
+}
 /*
  * ####################
  * #    Interpreter   #
@@ -900,16 +927,12 @@ void init_interpreter(Interpreter *interpret)
 // Set mathematical constants in the interpreter.
 void set_math_const(Interpreter *interpret)
 {
-    // Eulers number
-    set_constant(interpret, "e", (Value){VAL_FLOAT, {.f_val = 2.718282}});
-    // Pi
-    set_constant(interpret, "pi", (Value){VAL_FLOAT, {.f_val = 3.141593}});
-    // Speed of light in m/s
-    set_constant(interpret, "c", (Value){VAL_INT, {.i_val = 299792458}});
-    // Vacuumn permittivity in (A*s)/(V*m)
-    set_constant(interpret, "ep", (Value){VAL_FLOAT, {.f_val = 8.854188}});
-    // Vacuumn permeability in N/(A²)
-    set_constant(interpret, "mu", (Value){VAL_FLOAT, {.f_val = 1.256637}});
+    for (unsigned int i = 0; i < NUM_BUILTINS; i++)
+    {
+        // Inject the actual value into RAM
+        set_variable(interpret, BUILTIN_CONSTANTS[i].name,
+                     BUILTIN_CONSTANTS[i].value);
+    }
 }
 
 // Resets the parser for a brand new line of text
@@ -1028,12 +1051,6 @@ static bool is_multiplicative_op(TokenTypes type)
 // Check if its an assign operation
 static bool is_assign_op(TokenTypes type) { return (bool)(type == ASSIGN); }
 // Converts a single digit into a uint8_t number
-
-// Safely injects a locked constant into the memory bank
-static void set_constant(Interpreter *interpret, const char *name, Value value)
-{
-    set_variable(interpret, name, value);
-}
 
 // Get the next character without increasing the position of the interpreter
 static char peek(Interpreter *interpret)
