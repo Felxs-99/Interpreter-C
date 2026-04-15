@@ -22,8 +22,11 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - [x] Alternative bases (Hexadecimal `0x` and Binary `0b`) — *Done 2026-04-13*
 - [x] Support for variables line `a = 10 * 5` — *Done 2026-04-12*
 - [x] Support for bitwise operations like `|`, `&`, `~` and `^` — *Done 2026-04-13*
+- [x] Support for reserved keywords like `const` — *Done 2026-04-15*
+- [ ] Support for reserved more keywords
 - [ ] Support for build in functions like `sin(90)`
-- [ ] Semantic Analysis & Symbol Table: Introduce a compile-time analyzer phase to enforce rules before the run-time evaluator executes.
+- [x] Semantic Analysis & Symbol Table: Introduce a compile-time analyzer phase to enforce rules before the run-time evaluator executes. — *Done 2026-04-15*
+- [ ] Semantic Analysis & Symbol Table: Create an advanced version/ extend it.
 - [ ] Professional Error Reporting: Add line and column tracking to the Lexer to provide Clang-style, exact-location syntax diagnostics.
 - [ ] Functions & The Call Stack: Upgrade the global memory architecture into a Stack of Activation Records to support local scoping and custom function calls.
 

@@ -16,8 +16,29 @@ TestResult calc(char *math_string, size_t length)
     interpret.buffer = math_string;
     interpret.length = length;
 
+    SymbolTable symtab = {0};
+    init_symtab(&symtab);
+
     get_next_token(&interpret);
     ASTNode *tree = statement(&interpret);
+
+    if (interpret.error_found || tree == NULL)
+    {
+        free_ast(tree);
+
+        return (TestResult){.answer = (Value){VAL_INT, {.i_val = 0}},
+                            .error = true};
+    }
+
+    analyze_tree(tree, &symtab);
+
+    if (symtab.error_found)
+    {
+        free_ast(tree);
+        symtab.error_found = false; // Reset the flag so the next line works!
+        return (TestResult){.answer = (Value){VAL_INT, {.i_val = 0}},
+                            .error = true};
+    }
 
     if (!interpret.error_found)
     {
@@ -43,6 +64,9 @@ TestResult calc_script(const char **lines, int line_count)
     Interpreter interpret = {0};
     init_interpreter(&interpret);
 
+    SymbolTable symtab = {0};
+    init_symtab(&symtab);
+
     // 1. Initialize final_answer as a Value struct
     Value final_answer = {VAL_INT, {.i_val = 0}};
 
@@ -57,6 +81,17 @@ TestResult calc_script(const char **lines, int line_count)
             free_ast(tree);
             free_interpreter(&interpret);
             // 2. Return empty struct on error
+            return (TestResult){.answer = (Value){VAL_INT, {.i_val = 0}},
+                                .error = true};
+        }
+
+        analyze_tree(tree, &symtab);
+
+        if (symtab.error_found)
+        {
+            free_ast(tree);
+            symtab.error_found =
+                false; // Reset the flag so the next line works!
             return (TestResult){.answer = (Value){VAL_INT, {.i_val = 0}},
                                 .error = true};
         }

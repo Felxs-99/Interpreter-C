@@ -44,17 +44,18 @@ typedef enum
     BIT_AND,
     BIT_XOR,
     BIT_NOT,
+    CONST,
     EOL,
     SPACE,
     ERROR,
-} TokenTypes;
+} TokenType;
 
 // Token struct
 typedef struct
 {
     Value value;
     char name[NAME_LENGTH];
-    TokenTypes type;
+    TokenType type;
 } Token;
 
 // Represents a declared variable
@@ -101,6 +102,7 @@ typedef enum
     NODE_BINOP,
     NODE_UNAOP,
     NODE_ASSIGN,
+    NODE_CONST_ASSIGN,
     NODE_VAR
 } ast_node_type;
 
@@ -122,6 +124,13 @@ void free_ast(ASTNode *node);
 
 // Lexer function to get the next token in the input stream
 void get_next_token(Interpreter *interpret);
+
+// Create a symbol table from the ast
+void analyze_tree(ASTNode *node, SymbolTable *symtab);
+// Init the symbol table
+void init_symtab(SymbolTable *symtab);
+// Free the allocated memory of the symbol table
+void free_symtab(SymbolTable *symtab);
 
 // Initialize the interpreter struct
 void init_interpreter(Interpreter *interpret);

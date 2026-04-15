@@ -14,7 +14,9 @@ static ASTNode *create_binop_node(ASTNode *left, Token op, ASTNode *right);
 static ASTNode *create_unaop_node(Token op, ASTNode *right);
 static ASTNode *create_assign_node(ASTNode *left, Token op, ASTNode *right);
 static ASTNode *create_var_node(Token id);
-static bool eat(TokenTypes token, Interpreter *interprete);
+static ASTNode *create_const_assign_node(ASTNode *left, Token op,
+                                         ASTNode *right);
+static bool eat(TokenType token, Interpreter *interprete);
 static ASTNode *bitwise_or_expr(Interpreter *interpret);
 static ASTNode *bitwise_xor_expr(Interpreter *interpret);
 static ASTNode *bitwise_and_expr(Interpreter *interpret);
@@ -22,9 +24,13 @@ static ASTNode *expr(Interpreter *interpret);
 static ASTNode *term(Interpreter *interpret);
 static ASTNode *factor(Interpreter *interpret);
 
+// Lexer function prototypes
+static TokenType get_keyword_type(const char *name);
+
 // Symbol table function prototypes
 static bool lookup_symbol(SymbolTable *symtab, const char *name);
 static void define_symbol(SymbolTable *symtab, const char *name, bool is_const);
+static void init_builtin_symbols(SymbolTable *symtab);
 
 // Interpreter function prototypes
 static void set_variable(Interpreter *interpret, const char *name, Value value);
@@ -32,13 +38,13 @@ static Value get_variable(Interpreter *interpret, const char *name);
 void set_math_const(Interpreter *interpret);
 
 // Helper function prototypes
-static void make_single_char_token(Interpreter *interpret, TokenTypes type);
+static void make_single_char_token(Interpreter *interpret, TokenType type);
 static void set_error_state_interpret(Interpreter *interpret);
 // Helper function to set the error state of the interpreter
 static void set_error_state_symtab(SymbolTable *symtab);
-static bool is_additive_op(TokenTypes type);
-static bool is_multiplicative_op(TokenTypes type);
-static bool is_assign_op(TokenTypes type);
+static bool is_additive_op(TokenType type);
+static bool is_multiplicative_op(TokenType type);
+static bool is_assign_op(TokenType type);
 static char peek(Interpreter *interpret);
 
 // Structure for math constants (to be in one place)
@@ -60,6 +66,16 @@ static const BuiltinConstant BUILTIN_CONSTANTS[] = {
 static const unsigned int NUM_BUILTINS =
     sizeof(BUILTIN_CONSTANTS) / sizeof(BUILTIN_CONSTANTS[0]);
 
+typedef struct
+{
+    const char *name;
+    TokenType type;
+} Keyword;
+
+static const Keyword RESERVED_KEYWORD[] = {{"const", CONST}};
+
+static const unsigned int NUM_RESERVED_KEYWORDS =
+    sizeof(RESERVED_KEYWORD) / sizeof(RESERVED_KEYWORD[0]);
 /*
  * ####################
  * #     PARSER       #
@@ -110,6 +126,18 @@ static ASTNode *create_assign_node(ASTNode *left, Token op, ASTNode *right)
     return node;
 }
 
+// Ast node for const assign operators
+static ASTNode *create_const_assign_node(ASTNode *left, Token op,
+                                         ASTNode *right)
+{
+    ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
+    node->type = NODE_CONST_ASSIGN;
+    node->token = op;
+    node->left = left;
+    node->right = right;
+    return node;
+}
+
 // Ast node for variables (ids)
 static ASTNode *create_var_node(Token id)
 {
@@ -132,7 +160,7 @@ void free_ast(ASTNode *node)
 }
 
 // Eat the provided token
-static bool eat(TokenTypes token, Interpreter *interpret)
+static bool eat(TokenType token, Interpreter *interpret)
 {
     if (interpret->current_token.type == token)
     {
@@ -144,8 +172,35 @@ static bool eat(TokenTypes token, Interpreter *interpret)
 
 ASTNode *statement(Interpreter *interpret)
 {
+    if (interpret->current_token.type == CONST)
+    {
+        eat(CONST, interpret);
+
+        Token id_token = interpret->current_token;
+        if (!eat(ID, interpret))
+        {
+            printf("Syntax Error: Expected variable name after 'const'.\n");
+            set_error_state_interpret(interpret);
+            return NULL;
+        }
+
+        ASTNode *left_node = create_var_node(id_token);
+
+        Token assign_token = interpret->current_token;
+
+        if (!eat(ASSIGN, interpret))
+        {
+            printf("Syntax Error: Expected '=' after constant name.\n");
+            set_error_state_interpret(interpret);
+            return NULL;
+        }
+
+        ASTNode *right_node = bitwise_or_expr(interpret);
+
+        return create_const_assign_node(left_node, assign_token, right_node);
+    }
+
     ASTNode *left_node = bitwise_or_expr(interpret);
-    Token token = {};
 
     // Stop evaluating if a syntax error was found in expr()
     if (interpret->error_found)
@@ -153,7 +208,6 @@ ASTNode *statement(Interpreter *interpret)
         free_ast(left_node);
         return NULL;
     }
-
     if (is_assign_op(interpret->current_token.type))
     {
         if (left_node->type != NODE_VAR)
@@ -163,7 +217,7 @@ ASTNode *statement(Interpreter *interpret)
             free_ast(left_node);
             return NULL;
         }
-        token = interpret->current_token;
+        Token token = interpret->current_token;
         if (!eat(ASSIGN, interpret))
         {
             printf("Syntax Error: Only values can be assigned to variables\n");
@@ -180,6 +234,7 @@ ASTNode *statement(Interpreter *interpret)
     // No assigment was used, just return the node from expr
     return left_node;
 }
+
 // Evaluate the bitwise or expression
 static ASTNode *bitwise_or_expr(Interpreter *interpret)
 {
@@ -498,7 +553,6 @@ void get_next_token(Interpreter *interpret)
     // Check if its a letter
     if (isalpha(current_char))
     {
-        token.type = ID;
         int position = 0;
         token.name[position] = current_char;
         interpret->position++;
@@ -518,9 +572,9 @@ void get_next_token(Interpreter *interpret)
             token.name[position] = interpret->buffer[interpret->position];
             interpret->position++;
         }
-
         // Add traling \0
         token.name[++position] = '\0';
+        token.type = get_keyword_type(token.name);
         interpret->current_token = token;
         return;
     }
@@ -575,6 +629,20 @@ void get_next_token(Interpreter *interpret)
     return;
 }
 
+// Check if the token name matches a reserved keyword
+static TokenType get_keyword_type(const char *name)
+{
+    for (unsigned int i = 0; i < NUM_RESERVED_KEYWORDS; i++)
+    {
+        if (strcmp(name, RESERVED_KEYWORD[i].name) == 0)
+        {
+            return RESERVED_KEYWORD[i].type;
+        }
+    }
+
+    return ID;
+}
+
 /*
  * ####################
  * #   Symbol Table   #
@@ -597,12 +665,18 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
             analyze_tree(node->right, symtab);
             break;
         case NODE_ASSIGN:
-            // Check if variable exists, if it's constant, or add it to
+            // Check if variable exists, or add it to
             //  SymbolTable
             analyze_tree(node->right, symtab);
-            define_symbol(symtab, node->token.name, false);
+            define_symbol(symtab, node->left->token.name, false);
             break;
 
+        case NODE_CONST_ASSIGN:
+            // Check if const variable exists, or add it to
+            //  SymbolTable
+            analyze_tree(node->right, symtab);
+            define_symbol(symtab, node->left->token.name, true);
+            break;
         case NODE_VAR:
             // Look up the variable in the SymbolTable to ensure it was
             // declared!
@@ -630,6 +704,14 @@ static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
                 set_error_state_symtab(symtab);
             }
 
+            else if (is_const)
+            {
+                printf("Semantic Error: Cannot redeclare existing variable "
+                       "'%s' as a constant\n",
+                       name);
+                set_error_state_symtab(symtab);
+            }
+
             return;
         }
     }
@@ -650,7 +732,7 @@ static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
     }
     unsigned int index = symtab->count;
     strcpy(symtab->symbols[index].name, name);
-    symtab->symbols->is_const = is_const;
+    symtab->symbols[index].is_const = is_const;
     symtab->count++;
 }
 
@@ -670,13 +752,39 @@ static bool lookup_symbol(SymbolTable *symtab, const char *name)
     return false;
 }
 
-void init_builtin_symbols(SymbolTable *symtab)
+// Init the symbol table
+void init_symtab(SymbolTable *symtab)
+{
+    symtab->capacity = 8;
+    symtab->symbols = (malloc(symtab->capacity * sizeof(Symbol)));
+
+    if (symtab->symbols == NULL)
+    {
+        printf("Fatal Error: Failed to allocate memory for symbol table!\n");
+        symtab->error_found = true;
+        return;
+    }
+
+    init_builtin_symbols(symtab);
+}
+
+// Add build in symbol like math constants to the symbol table
+static void init_builtin_symbols(SymbolTable *symtab)
 {
     for (unsigned int i = 0; i < NUM_BUILTINS; i++)
     {
         // Add the name, and lock it as a constant (true)
         define_symbol(symtab, BUILTIN_CONSTANTS[i].name, true);
     }
+}
+
+// Free the allocated memory of the symbol table
+void free_symtab(SymbolTable *symtab)
+{
+    free(symtab->symbols);
+    symtab->symbols = NULL;
+    symtab->count = 0;
+    symtab->capacity = 0;
 }
 /*
  * ####################
@@ -885,7 +993,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
             }
             return (Value){VAL_INT, {.i_val = 0}};
         }
-
+        case NODE_CONST_ASSIGN:
         case NODE_ASSIGN:
         {
             Value left_val = evaluate(node->right, interpret);
@@ -1009,7 +1117,7 @@ static Value get_variable(Interpreter *interpret, const char *name)
  * ####################
  */
 // Helper functiion for adding single characters to a token
-static void make_single_char_token(Interpreter *interpret, TokenTypes type)
+static void make_single_char_token(Interpreter *interpret, TokenType type)
 {
     Token token = {0};
     token.type = type;
@@ -1037,19 +1145,19 @@ static void set_error_state_symtab(SymbolTable *symtab)
 }
 
 // Check if its a plus or minus operator
-static bool is_additive_op(TokenTypes type)
+static bool is_additive_op(TokenType type)
 {
     return (bool)(type == PLUS || type == MINUS);
 }
 
 // Check if its a multiplication or dividing operator
-static bool is_multiplicative_op(TokenTypes type)
+static bool is_multiplicative_op(TokenType type)
 {
     return (bool)(type == MUL || type == DIV);
 }
 
 // Check if its an assign operation
-static bool is_assign_op(TokenTypes type) { return (bool)(type == ASSIGN); }
+static bool is_assign_op(TokenType type) { return (bool)(type == ASSIGN); }
 // Converts a single digit into a uint8_t number
 
 // Get the next character without increasing the position of the interpreter
