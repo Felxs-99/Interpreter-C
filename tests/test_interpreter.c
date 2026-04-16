@@ -9,6 +9,8 @@ typedef struct
     bool error;
 } TestResult;
 
+UTEST_MAIN();
+
 // Helper function for the test to use the tests with the new ast structur
 TestResult calc(char *math_string, size_t length)
 {
@@ -113,6 +115,13 @@ TestResult calc_script(const char **lines, int line_count)
     free_interpreter(&interpret);
     return (TestResult){.answer = final_answer, .error = false};
 }
+
+/*
+ * ####################
+ * #   Positv Tests   #
+ * ####################
+ */
+
 // Test Addition : Simplest case
 UTEST(InterpreterTests, addition_single_digits_no_whitespace)
 {
@@ -381,8 +390,18 @@ UTEST(InterpreterTests, bitwise_op_and)
     ASSERT_EQ(result.answer.as.i_val, 3);
 }
 
+// Test Keywords: Constants
+UTEST(InterpreterTests, keywords_const)
+{
+    const char *test_script[] = {"const x = 10", "x + 20"};
+    TestResult result = calc_script(test_script, 2);
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 30);
+}
+
 // Test Precedence: Basic level precedence (should be always the last in the
-// file to find it better)
+// positiv test to find it better)
 UTEST(InterpreterTests, basic_precedece)
 {
     char test_expr[] = "2 | 3 ^ 4 & 5 + 1 * 2";
@@ -393,7 +412,7 @@ UTEST(InterpreterTests, basic_precedece)
 }
 
 // Test Precedence: Advanced level precedence (should be always the last in the
-// file to find it better)
+// positiv test to find it better)
 UTEST(InterpreterTests, advanced_precedence)
 {
     char test_expr[] = "~(1 ^ 3) & 15 | 8";
@@ -402,4 +421,17 @@ UTEST(InterpreterTests, advanced_precedence)
     ASSERT_EQ((int)result.answer.type, VAL_INT);
     ASSERT_EQ(result.answer.as.i_val, 13);
 }
-UTEST_MAIN();
+
+/*
+ * ####################
+ * #   Negativ Tests  #
+ * ####################
+ */
+
+// Test Syntax Error: Missing int, unary or '('
+UTEST(InterpreterTests, syntax_missing_uap)
+{
+    char test_expr[] = "2+";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_TRUE(result.error);
+}
