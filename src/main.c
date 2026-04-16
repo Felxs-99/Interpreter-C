@@ -74,7 +74,7 @@ int main()
         {
             if (final_answer.type == VAL_INT)
             {
-                printf("%d\n", final_answer.as.i_val);
+                printf("%lld\n", final_answer.as.i_val);
             }
             else if (final_answer.type == VAL_FLOAT)
             {

@@ -1,7 +1,7 @@
 #include "interpreter.h"
-#include "errno.h"
 #include "overflow.h"
 #include <ctype.h>
+#include <iso646.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -248,7 +248,7 @@ static ASTNode *bitwise_or_expr(Interpreter *interpret)
     {
         if (interpret->error_found)
         {
-            free_ast(left_node);
+            free(left_node);
             return NULL;
         }
 
@@ -466,20 +466,10 @@ void get_next_token(Interpreter *interpret)
                     return;
                 }
 
-                errno = 0;
                 token.type = INT;
                 token.value.type = VAL_INT;
-                token.value.as.i_val = strtoll(temp_num, NULL, 2);
+                token.value.as.i_val = strtol(temp_num, NULL, 2);
 
-                // Check for overflow errors
-                if (errno == ERANGE)
-                {
-                    printf(
-                        "Lexical Error: Number '%s' is too large to store!\n",
-                        temp_num);
-                    set_error_state_interpret(interpret);
-                    return;
-                }
                 interpret->current_token = token;
                 return;
             }
@@ -503,20 +493,10 @@ void get_next_token(Interpreter *interpret)
                     return;
                 }
 
-                errno = 0;
                 token.type = INT;
                 token.value.type = VAL_INT;
-                token.value.as.i_val = strtoll(temp_num, NULL, 16);
+                token.value.as.i_val = strtol(temp_num, NULL, 16);
 
-                // Check for overflow errors
-                if (errno == ERANGE)
-                {
-                    printf(
-                        "Lexical Error: Number '%s' is too large to store!\n",
-                        temp_num);
-                    set_error_state_interpret(interpret);
-                    return;
-                }
                 interpret->current_token = token;
                 return;
             }
@@ -541,7 +521,7 @@ void get_next_token(Interpreter *interpret)
                 has_decimal = true;
             }
             // Prevent temp buffer overflow
-            if (temp_pos >= (64))
+            if (temp_pos >= 64)
             {
                 printf("Value Error: Given Number is too long!\n");
                 set_error_state_interpret(interpret);
@@ -554,7 +534,7 @@ void get_next_token(Interpreter *interpret)
         }
 
         temp_num[temp_pos] = '\0';
-        errno = 0;
+
         if (has_decimal)
         {
             token.type = FLOAT;
@@ -565,17 +545,9 @@ void get_next_token(Interpreter *interpret)
         {
             token.type = INT;
             token.value.type = VAL_INT;
-            token.value.as.i_val = strtoll(temp_num, NULL, 10);
+            token.value.as.i_val = atoi(temp_num);
         }
 
-        // Check for overflow errors
-        if (errno == ERANGE)
-        {
-            printf("Lexical Error: Decimal number '%s' is out of range!\n",
-                   temp_num);
-            set_error_state_interpret(interpret);
-            return;
-        }
         interpret->current_token = token;
         return;
     }
@@ -712,9 +684,7 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
             // declared!
             lookup_symbol(symtab, node->token.name);
             break;
-        case NODE_NUM:
-            // ignore number nodes for the moment
-            break;
+
         // Numbers and Unary ops just pass through or get ignored by the
         // analyzer
         default:
@@ -749,12 +719,6 @@ static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
     }
     if (symtab->count >= symtab->capacity)
     {
-        // realloc with 0 is equal to free, what shouldn't happen here
-        if (symtab->capacity == 0)
-        {
-            symtab->capacity = 8;
-        }
-
         symtab->capacity *= 2;
         Symbol *new_symbol = (Symbol *)realloc(
             symtab->symbols, symtab->capacity * sizeof(Symbol));
@@ -1115,12 +1079,6 @@ static void set_variable(Interpreter *interpret, const char *name, Value value)
 
     if (interpret->mem_count >= interpret->mem_capacity)
     {
-        // realloc with 0 is equal to free, what shouldn't happen here
-        if (interpret->mem_capacity == 0)
-        {
-            interpret->mem_capacity = 8;
-        }
-
         interpret->mem_capacity *= 2;
         MemorySlot *new_memory = (MemorySlot *)realloc(
             interpret->memory, interpret->mem_capacity * sizeof(MemorySlot));

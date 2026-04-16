@@ -21,7 +21,7 @@ typedef struct
     ValueType type;
     union
     {
-        int i_val;
+        long long i_val;
         double f_val;
     } as;
 } Value;
