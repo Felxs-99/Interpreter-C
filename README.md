@@ -24,6 +24,7 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - [x] Support for bitwise operations like `|`, `&`, `~` and `^` — *Done 2026-04-13*
 - [x] Support for reserved keywords like `const` — *Done 2026-04-15*
 - [x] Semantic Analysis & Symbol Table: Introduce a compile-time analyzer phase to enforce rules before the run-time evaluator executes. — *Done 2026-04-15*
+- [x] Support larger numbers — *Done 2026-04-16* 
 - [ ] Support for reserved more keywords
 - [ ] Support for build in functions like `sin(90)`
 - [ ] Semantic Analysis & Symbol Table: Create an advanced version/ extend it.
