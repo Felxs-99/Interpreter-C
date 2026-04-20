@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -271,7 +272,7 @@ static ASTNode *bitwise_xor_expr(Interpreter *interpret)
     {
         if (interpret->error_found)
         {
-            free(left_node);
+            free_ast(left_node);
             return NULL;
         }
 
@@ -294,7 +295,7 @@ static ASTNode *bitwise_and_expr(Interpreter *interpret)
     {
         if (interpret->error_found)
         {
-            free(left_node);
+            free_ast(left_node);
             return NULL;
         }
 
@@ -452,8 +453,11 @@ void get_next_token(Interpreter *interpret)
                 while (interpret->buffer[interpret->position] == '0' ||
                        interpret->buffer[interpret->position] == '1')
                 {
-                    temp_num[temp_pos++] =
-                        interpret->buffer[interpret->position++];
+                    if (temp_pos < 63)
+                    {
+                        temp_num[temp_pos++] =
+                            interpret->buffer[interpret->position++];
+                    }
                 }
 
                 // Check for invalid characters after the binary number
@@ -489,8 +493,11 @@ void get_next_token(Interpreter *interpret)
 
                 while (isxdigit(interpret->buffer[interpret->position]))
                 {
-                    temp_num[temp_pos++] =
-                        interpret->buffer[interpret->position++];
+                    if (temp_pos < 63)
+                    {
+                        temp_num[temp_pos++] =
+                            interpret->buffer[interpret->position++];
+                    }
                 }
 
                 // Check for invalid characters after the hex number
@@ -541,7 +548,7 @@ void get_next_token(Interpreter *interpret)
                 has_decimal = true;
             }
             // Prevent temp buffer overflow
-            if (temp_pos >= (64))
+            if (temp_pos >= (63))
             {
                 printf("Value Error: Given Number is too long!\n");
                 set_error_state_interpret(interpret);
@@ -769,9 +776,18 @@ static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
         symtab->symbols = new_symbol;
     }
     unsigned int index = symtab->count;
-    strcpy(symtab->symbols[index].name, name);
-    symtab->symbols[index].is_const = is_const;
-    symtab->count++;
+
+    if (strlen(name) < NAME_LENGTH)
+    {
+        strcpy(symtab->symbols[index].name, name);
+        symtab->symbols[index].is_const = is_const;
+        symtab->count++;
+    }
+    else
+    {
+        printf("Semantic Error: Name of variable too long!\n ");
+        set_error_state_symtab(symtab);
+    }
 }
 
 // Check if a symbol is in the symbol table
@@ -794,7 +810,7 @@ static bool lookup_symbol(SymbolTable *symtab, const char *name)
 void init_symtab(SymbolTable *symtab)
 {
     symtab->capacity = 8;
-    symtab->symbols = (malloc(symtab->capacity * sizeof(Symbol)));
+    symtab->symbols = malloc(symtab->capacity * sizeof(Symbol));
 
     if (symtab->symbols == NULL)
     {
@@ -1023,7 +1039,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                 }
                 else
                 {
-                    printf("Runtime Error: Cannot invert decimal number '%f\n'",
+                    printf("Runtime Error: Cannot invert decimal number '%f'\n",
                            expr_val.as.f_val);
                     set_error_state_interpret(interpret);
                     return (Value){VAL_INT, {.i_val = 0}};
@@ -1134,9 +1150,17 @@ static void set_variable(Interpreter *interpret, const char *name, Value value)
         interpret->memory = new_memory;
     }
     unsigned int index = interpret->mem_count;
-    strcpy(interpret->memory[index].name, name);
-    interpret->memory[index].value = value;
-    interpret->mem_count++;
+    if (strlen(name) < NAME_LENGTH)
+    {
+        strcpy(interpret->memory[index].name, name);
+        interpret->memory[index].value = value;
+        interpret->mem_count++;
+    }
+    else
+    {
+        printf("Runtime Error: Name of variable too long!\n ");
+        set_error_state_interpret(interpret);
+    }
 }
 
 // Check if a variable exists in the symbol table and if yes returns the value
