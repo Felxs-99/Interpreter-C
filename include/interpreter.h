@@ -13,7 +13,8 @@
 typedef enum
 {
     VAL_INT,
-    VAL_FLOAT
+    VAL_FLOAT,
+    VAL_BOOL
 } ValueType;
 
 typedef struct
@@ -23,6 +24,7 @@ typedef struct
     {
         long long i_val;
         double f_val;
+        bool b_val;
     } as;
 } Value;
 
@@ -44,6 +46,8 @@ typedef enum
     BIT_AND,
     BIT_XOR,
     BIT_NOT,
+    TRUE,
+    FALSE,
     CONST,
     EOL,
     SPACE,
@@ -98,7 +102,7 @@ typedef struct
 // Ast node types
 typedef enum
 {
-    NODE_NUM,
+    NODE_LITERAL,
     NODE_BINOP,
     NODE_UNAOP,
     NODE_ASSIGN,

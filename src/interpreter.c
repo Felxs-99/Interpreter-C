@@ -74,8 +74,7 @@ typedef struct
 } Keyword;
 
 static const Keyword RESERVED_KEYWORD[] = {
-    {"const", CONST},
-};
+    {"const", CONST}, {"true", TRUE}, {"false", FALSE}};
 
 static const unsigned int NUM_RESERVED_KEYWORDS =
     sizeof(RESERVED_KEYWORD) / sizeof(RESERVED_KEYWORD[0]);
@@ -89,7 +88,7 @@ static const unsigned int NUM_RESERVED_KEYWORDS =
 static ASTNode *create_num_node(Token token)
 {
     ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
-    node->type = NODE_NUM;
+    node->type = NODE_LITERAL;
     node->token = token;
     node->left = NULL;
     node->right = NULL;
@@ -381,6 +380,11 @@ static ASTNode *factor(Interpreter *interpret)
         eat(FLOAT, interpret);
         return create_num_node(token);
     }
+    else if (token.type == TRUE || token.type == FALSE)
+    {
+        eat(token.type, interpret);
+        return create_num_node(token);
+    }
     // For parentheses
     else if (token.type == LPAREN)
     {
@@ -612,6 +616,18 @@ void get_next_token(Interpreter *interpret)
         // Add traling \0
         token.name[++position] = '\0';
         token.type = get_keyword_type(token.name);
+
+        // Check if the found keyword is a boolean one
+        if (token.type == TRUE)
+        {
+            token.value.type = VAL_BOOL;
+            token.value.as.b_val = true;
+        }
+        else if (token.type == FALSE)
+        {
+            token.value.type = VAL_BOOL;
+            token.value.as.b_val = false;
+        }
         interpret->current_token = token;
         return;
     }
@@ -719,11 +735,9 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
             // declared!
             lookup_symbol(symtab, node->token.name);
             break;
-        case NODE_NUM:
+        case NODE_LITERAL:
             // ignore number nodes for the moment
             break;
-        // Numbers and Unary ops just pass through or get ignored by the
-        // analyzer
         default:
             break;
     }
@@ -857,7 +871,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
     // Determine what kinde of node it is
     switch (node->type)
     {
-        case NODE_NUM:
+        case NODE_LITERAL:
             return node->token.value;
 
         case NODE_BINOP:
@@ -867,6 +881,37 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
 
             if (interpret->error_found)
                 return (Value){VAL_INT, {.i_val = 0}};
+
+            if (left_val.type == VAL_BOOL && right_val.type == VAL_BOOL)
+            {
+                Token op = node->token;
+                if (op.type == BIT_OR)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.b_val || right_val.as.b_val)}};
+                }
+                else if (op.type == BIT_XOR)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.b_val != right_val.as.b_val)}};
+                }
+                else if (op.type == BIT_AND)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.b_val && right_val.as.b_val)}};
+                }
+            }
+            else if (left_val.type == VAL_BOOL || right_val.type == VAL_BOOL)
+            {
+                printf("Runtime Error: Cannot perform arithmetic "
+                       "operations on "
+                       "booleans.\n");
+                interpret->error_found = true;
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
 
             if (left_val.type == VAL_INT && right_val.type == VAL_INT)
             {

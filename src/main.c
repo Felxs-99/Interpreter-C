@@ -80,6 +80,10 @@ int main()
             {
                 printf("%.7g\n", final_answer.as.f_val);
             }
+            else if (final_answer.type == VAL_BOOL)
+            {
+                printf("%s\n", final_answer.as.b_val ? "true" : "false");
+            }
         }
 
         // --- CLEANUP ---
