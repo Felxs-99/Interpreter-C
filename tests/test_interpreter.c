@@ -417,7 +417,7 @@ UTEST(InterpreterTests, bitwise_op_and_bool)
     TestResult result = calc(test_expr, sizeof(test_expr));
     ASSERT_FALSE(result.error);
     ASSERT_EQ((int)result.answer.type, VAL_BOOL);
-    ASSERT_EQ(result.answer.as.i_val, 0);
+    ASSERT_EQ(result.answer.as.b_val, 0);
 }
 
 // Test Keywords: Constants
@@ -427,7 +427,7 @@ UTEST(InterpreterTests, keywords_const)
     TestResult result = calc_script(test_script, 2);
     ASSERT_FALSE(result.error);
     ASSERT_EQ((int)result.answer.type, VAL_INT);
-    ASSERT_EQ(result.answer.as.i_val, 30);
+    ASSERT_EQ(result.answer.as.b_val, 30);
 }
 
 // Test Precedence: Basic level precedence (should be always the last in the

@@ -10,7 +10,7 @@
 #include <string.h>
 
 // Parser function prototypes
-static ASTNode *create_num_node(Token token);
+static ASTNode *create_literal_node(Token token);
 static ASTNode *create_binop_node(ASTNode *left, Token op, ASTNode *right);
 static ASTNode *create_unaop_node(Token op, ASTNode *right);
 static ASTNode *create_assign_node(ASTNode *left, Token op, ASTNode *right);
@@ -85,7 +85,7 @@ static const unsigned int NUM_RESERVED_KEYWORDS =
  */
 
 // Ast node for numbers
-static ASTNode *create_num_node(Token token)
+static ASTNode *create_literal_node(Token token)
 {
     ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
     node->type = NODE_LITERAL;
@@ -372,18 +372,18 @@ static ASTNode *factor(Interpreter *interpret)
     else if (token.type == INT)
     {
         eat(INT, interpret);
-        return create_num_node(token);
+        return create_literal_node(token);
     }
     // For decimal values
     else if (token.type == FLOAT)
     {
         eat(FLOAT, interpret);
-        return create_num_node(token);
+        return create_literal_node(token);
     }
     else if (token.type == TRUE || token.type == FALSE)
     {
         eat(token.type, interpret);
-        return create_num_node(token);
+        return create_literal_node(token);
     }
     // For parentheses
     else if (token.type == LPAREN)
@@ -612,6 +612,14 @@ void get_next_token(Interpreter *interpret)
 
             token.name[position] = interpret->buffer[interpret->position];
             interpret->position++;
+        }
+
+        if (position >= (NAME_LENGTH - 2))
+        {
+            printf("Syntax Error: Max length for variables are %d\n",
+                   (NAME_LENGTH - 1));
+            set_error_state_interpret(interpret);
+            return;
         }
         // Add traling \0
         token.name[++position] = '\0';
@@ -903,6 +911,14 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                         VAL_BOOL,
                         {.b_val = (left_val.as.b_val && right_val.as.b_val)}};
                 }
+                else
+                {
+                    printf("Runtime Error: Cannot perform arithmetic "
+                           "operations on "
+                           "booleans.\n");
+                    interpret->error_found = true;
+                    return (Value){VAL_INT, {.i_val = 0}};
+                }
             }
             else if (left_val.type == VAL_BOOL || right_val.type == VAL_BOOL)
             {
@@ -1057,6 +1073,21 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
             if (node->token.type == PLUS)
             {
                 return expr_val;
+            }
+            if (expr_val.type == VAL_BOOL)
+            {
+                if (node->token.type == BIT_NOT)
+                {
+                    return (Value){VAL_BOOL, {.b_val = !expr_val.as.b_val}};
+                }
+                else
+                {
+                    printf("Runtime Error: Cannot perform arithmetic "
+                           "operations on "
+                           "booleans.\n");
+                    interpret->error_found = true;
+                    return (Value){VAL_INT, {.i_val = 0}};
+                }
             }
             else if (node->token.type == MINUS)
             {
