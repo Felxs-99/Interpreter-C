@@ -452,6 +452,67 @@ UTEST(InterpreterTests, advanced_precedence)
     ASSERT_EQ(result.answer.as.i_val, 13);
 }
 
+// Test Precedence: Math vs Relational
+// Math should happen BEFORE the comparison: (10 + (2 * 3)) > ((4 * 3) + 3) -->
+// 16 > 15 --> true
+UTEST(InterpreterTests, precedence_math_vs_relational)
+{
+    char test_expr[] = "10 + 2 * 3 > 4 * 3 + 3";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_BOOL);
+    ASSERT_EQ(result.answer.as.b_val, true);
+}
+
+// Test Precedence: Relational vs Equality
+// Relational (<, >) should happen BEFORE Equality (==, !=): (5 > 3) == (4 < 10)
+// --> true == true --> true
+UTEST(InterpreterTests, precedence_relational_vs_equality)
+{
+    char test_expr[] = "5 > 3 == 4 < 10";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_BOOL);
+    ASSERT_EQ(result.answer.as.b_val, true);
+}
+
+// Test Precedence: The Famous C Trap (Equality vs Bitwise AND)
+// Equality (==) happens BEFORE Bitwise AND (&).
+// Evaluates as: (7 == (3 + 4)) & (5 == 5) --> (7 == 7) & true --> true & true
+// --> true
+UTEST(InterpreterTests, precedence_the_c_trap)
+{
+    char test_expr[] = "7 == 3 + 4 & 5 == 5";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_BOOL);
+    ASSERT_EQ(result.answer.as.b_val, true);
+}
+
+// Test Precedence: Boolean Unary vs Equality vs Bitwise OR
+// Evaluates as: ((~false) == true) | false --> (true == true) | false --> true
+// ~false --> true
+UTEST(InterpreterTests, precedence_boolean_logic_chain)
+{
+    char test_expr[] = "~false == true | false";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_BOOL);
+    ASSERT_EQ(result.answer.as.b_val, true);
+}
+
+// Test Precedence: Complex Bitwise Math
+// & happens before ^, which happens before |
+// Evaluates as: 1 | (2 ^ (3 & 4)) --> 1 | (2 ^ 0) --> 1 | 2 --> 3
+UTEST(InterpreterTests, precedence_complex_bitwise)
+{
+    char test_expr[] = "1 | 2 ^ 3 & 4";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 3);
+}
+
 /*
  * ####################
  * #   Negativ Tests  #

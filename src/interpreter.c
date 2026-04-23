@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdnoreturn.h>
 #include <string.h>
 
 // Parser function prototypes
@@ -21,6 +22,8 @@ static bool eat(TokenType token, Interpreter *interprete);
 static ASTNode *bitwise_or_expr(Interpreter *interpret);
 static ASTNode *bitwise_xor_expr(Interpreter *interpret);
 static ASTNode *bitwise_and_expr(Interpreter *interpret);
+static ASTNode *equality(Interpreter *interpret);
+static ASTNode *relation(Interpreter *interpret);
 static ASTNode *expr(Interpreter *interpret);
 static ASTNode *term(Interpreter *interpret);
 static ASTNode *factor(Interpreter *interpret);
@@ -39,13 +42,14 @@ static Value get_variable(Interpreter *interpret, const char *name);
 void set_math_const(Interpreter *interpret);
 
 // Helper function prototypes
-static void make_single_char_token(Interpreter *interpret, TokenType type);
+static void make_simple_token(Interpreter *interpret, TokenType type);
 static void set_error_state_interpret(Interpreter *interpret);
 // Helper function to set the error state of the interpreter
 static void set_error_state_symtab(SymbolTable *symtab);
 static bool is_additive_op(TokenType type);
 static bool is_multiplicative_op(TokenType type);
 static bool is_assign_op(TokenType type);
+static bool is_relation_op(TokenType type);
 static char peek(Interpreter *interpret);
 
 // Structure for math constants (to be in one place)
@@ -287,10 +291,57 @@ static ASTNode *bitwise_xor_expr(Interpreter *interpret)
 // Evaluate the bitwise and expression
 static ASTNode *bitwise_and_expr(Interpreter *interpret)
 {
-    ASTNode *left_node = expr(interpret);
+    ASTNode *left_node = equality(interpret);
     Token token = {0};
 
     while (interpret->current_token.type == BIT_AND)
+    {
+        if (interpret->error_found)
+        {
+            free_ast(left_node);
+            return NULL;
+        }
+
+        token = interpret->current_token;
+        eat(token.type, interpret);
+
+        ASTNode *right_node = equality(interpret);
+        left_node = create_binop_node(left_node, token, right_node);
+    }
+    return left_node;
+}
+
+// Evaluate equality expressions
+static ASTNode *equality(Interpreter *interpret)
+{
+    ASTNode *left_node = relation(interpret);
+    Token token = {0};
+
+    while (interpret->current_token.type == EQUAL ||
+           interpret->current_token.type == NOT_EQUAL)
+    {
+        if (interpret->error_found)
+        {
+            free_ast(left_node);
+            return NULL;
+        }
+
+        token = interpret->current_token;
+        eat(token.type, interpret);
+
+        ASTNode *right_node = relation(interpret);
+        left_node = create_binop_node(left_node, token, right_node);
+    }
+    return left_node;
+}
+
+// Evaluate relation expressions
+static ASTNode *relation(Interpreter *interpret)
+{
+    ASTNode *left_node = expr(interpret);
+    Token token = {0};
+
+    while (is_relation_op(interpret->current_token.type))
     {
         if (interpret->error_found)
         {
@@ -306,7 +357,6 @@ static ASTNode *bitwise_and_expr(Interpreter *interpret)
     }
     return left_node;
 }
-
 // Evaluate the expression
 static ASTNode *expr(Interpreter *interpret)
 {
@@ -640,45 +690,102 @@ void get_next_token(Interpreter *interpret)
         return;
     }
 
+    // Check if its a assign or equal character
+    if (current_char == '=')
+    {
+        if (peek(interpret) == '=')
+        {
+            // make_simple_token also increases by 1 -> 2
+            interpret->position++;
+            make_simple_token(interpret, EQUAL);
+            return;
+        }
+        else
+        {
+            make_simple_token(interpret, ASSIGN);
+            return;
+        }
+    }
+    // Check if its a not equal character
+    if (current_char == '!')
+    {
+        if (peek(interpret) == '=')
+        {
+            // make_simple_token also increases by 1 -> 2
+            interpret->position++;
+            make_simple_token(interpret, NOT_EQUAL);
+            return;
+        }
+    }
+
+    // Check for equal greater and equal less
+    if (current_char == '<')
+    {
+        if (peek(interpret) == '=')
+        {
+            // make_simple_token also increases by 1 -> 2
+            interpret->position++;
+            make_simple_token(interpret, EQUAL_LESS);
+            return;
+        }
+        else
+        {
+            make_simple_token(interpret, LESS);
+            return;
+        }
+    }
+
+    if (current_char == '>')
+    {
+        if (peek(interpret) == '=')
+        {
+            // make_simple_token also increases by 1 -> 2
+            interpret->position++;
+            make_simple_token(interpret, EQUAL_GREATER);
+            return;
+        }
+        else
+        {
+            make_simple_token(interpret, GREATER);
+            return;
+        }
+    }
     // Check for known symbols and create the correspondig token
     switch (current_char)
     {
         case '+':
-            make_single_char_token(interpret, PLUS);
+            make_simple_token(interpret, PLUS);
             return;
         case '-':
-            make_single_char_token(interpret, MINUS);
+            make_simple_token(interpret, MINUS);
             return;
         case '*':
-            make_single_char_token(interpret, MUL);
+            make_simple_token(interpret, MUL);
             return;
         case '/':
-            make_single_char_token(interpret, DIV);
+            make_simple_token(interpret, DIV);
             return;
         case '(':
-            make_single_char_token(interpret, LPAREN);
+            make_simple_token(interpret, LPAREN);
             return;
         case ')':
-            make_single_char_token(interpret, RPAREN);
-            return;
-        case '=':
-            make_single_char_token(interpret, ASSIGN);
+            make_simple_token(interpret, RPAREN);
             return;
         case '|':
-            make_single_char_token(interpret, BIT_OR);
+            make_simple_token(interpret, BIT_OR);
             return;
         case '&':
-            make_single_char_token(interpret, BIT_AND);
+            make_simple_token(interpret, BIT_AND);
             return;
         case '^':
-            make_single_char_token(interpret, BIT_XOR);
+            make_simple_token(interpret, BIT_XOR);
             return;
         case '~':
-            make_single_char_token(interpret, BIT_NOT);
+            make_simple_token(interpret, BIT_NOT);
             return;
         case '\n':
         case '\0':
-            make_single_char_token(interpret, EOL);
+            make_simple_token(interpret, EOL);
             return;
         default:
             break;
@@ -888,11 +995,13 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
             Value right_val = evaluate(node->right, interpret);
 
             if (interpret->error_found)
+            {
                 return (Value){VAL_INT, {.i_val = 0}};
+            }
 
+            Token op = node->token;
             if (left_val.type == VAL_BOOL && right_val.type == VAL_BOOL)
             {
-                Token op = node->token;
                 if (op.type == BIT_OR)
                 {
                     return (Value){
@@ -910,6 +1019,18 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     return (Value){
                         VAL_BOOL,
                         {.b_val = (left_val.as.b_val && right_val.as.b_val)}};
+                }
+                else if (op.type == EQUAL)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.b_val == right_val.as.b_val)}};
+                }
+                else if (op.type == NOT_EQUAL)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.b_val != right_val.as.b_val)}};
                 }
                 else
                 {
@@ -932,7 +1053,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
             if (left_val.type == VAL_INT && right_val.type == VAL_INT)
             {
                 Value result = {VAL_INT, {.i_val = 0}};
-                if (node->token.type == PLUS)
+                if (op.type == PLUS)
                 {
                     if (SAFE_ADD(left_val.as.i_val, right_val.as.i_val,
                                  &result.as.i_val))
@@ -945,7 +1066,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
 
                     return result;
                 }
-                else if (node->token.type == MINUS)
+                else if (op.type == MINUS)
                 {
                     if (SAFE_SUB(left_val.as.i_val, right_val.as.i_val,
                                  &result.as.i_val))
@@ -957,7 +1078,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     }
                     return result;
                 }
-                else if (node->token.type == MUL)
+                else if (op.type == MUL)
                 {
                     if (SAFE_MUL(left_val.as.i_val, right_val.as.i_val,
                                  &result.as.i_val))
@@ -969,7 +1090,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     }
                     return result;
                 }
-                else if (node->token.type == DIV)
+                else if (op.type == DIV)
                 {
                     // The Division-by-Zero check returns!
                     if (right_val.as.i_val == 0)
@@ -990,23 +1111,59 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     double r_num = (double)right_val.as.i_val;
                     return (Value){VAL_FLOAT, {.f_val = l_num / r_num}};
                 }
-                else if (node->token.type == BIT_OR)
+                else if (op.type == BIT_OR)
                 {
                     return (Value){
                         VAL_INT,
                         {.i_val = left_val.as.i_val | right_val.as.i_val}};
                 }
-                else if (node->token.type == BIT_XOR)
+                else if (op.type == BIT_XOR)
                 {
                     return (Value){
                         VAL_INT,
                         {.i_val = left_val.as.i_val ^ right_val.as.i_val}};
                 }
-                else if (node->token.type == BIT_AND)
+                else if (op.type == BIT_AND)
                 {
                     return (Value){
                         VAL_INT,
                         {.i_val = left_val.as.i_val & right_val.as.i_val}};
+                }
+                else if (op.type == EQUAL)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.i_val == right_val.as.i_val)}};
+                }
+                else if (op.type == NOT_EQUAL)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.i_val != right_val.as.i_val)}};
+                }
+                else if (op.type == LESS)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.i_val < right_val.as.i_val)}};
+                }
+                else if (op.type == EQUAL_LESS)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.i_val <= right_val.as.i_val)}};
+                }
+                else if (op.type == GREATER)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.i_val > right_val.as.i_val)}};
+                }
+                else if (op.type == EQUAL_GREATER)
+                {
+                    return (Value){
+                        VAL_BOOL,
+                        {.b_val = (left_val.as.i_val >= right_val.as.i_val)}};
                 }
                 else
                 {
@@ -1052,6 +1209,30 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     }
                     result.as.f_val = l_num / r_num;
                     return result;
+                }
+                else if (op.type == EQUAL)
+                {
+                    return (Value){VAL_BOOL, {.b_val = (l_num == r_num)}};
+                }
+                else if (op.type == NOT_EQUAL)
+                {
+                    return (Value){VAL_BOOL, {.b_val = (l_num != r_num)}};
+                }
+                else if (op.type == LESS)
+                {
+                    return (Value){VAL_BOOL, {.b_val = (l_num < r_num)}};
+                }
+                else if (op.type == EQUAL_LESS)
+                {
+                    return (Value){VAL_BOOL, {.b_val = (l_num <= r_num)}};
+                }
+                else if (op.type == GREATER)
+                {
+                    return (Value){VAL_BOOL, {.b_val = (l_num > r_num)}};
+                }
+                else if (op.type == EQUAL_GREATER)
+                {
+                    return (Value){VAL_BOOL, {.b_val = (l_num >= r_num)}};
                 }
                 else
                 {
@@ -1261,7 +1442,7 @@ static Value get_variable(Interpreter *interpret, const char *name)
  * ####################
  */
 // Helper functiion for adding single characters to a token
-static void make_single_char_token(Interpreter *interpret, TokenType type)
+static void make_simple_token(Interpreter *interpret, TokenType type)
 {
     Token token = {0};
     token.type = type;
@@ -1302,12 +1483,23 @@ static bool is_multiplicative_op(TokenType type)
 
 // Check if its an assign operation
 static bool is_assign_op(TokenType type) { return (bool)(type == ASSIGN); }
-// Converts a single digit into a uint8_t number
+
+// Check if its a relation type
+static bool is_relation_op(TokenType type)
+{
+    return (bool)((type == EQUAL_GREATER) || (type == EQUAL_LESS) ||
+                  (type == LESS) || (type == GREATER));
+}
 
 // Get the next character without increasing the position of the interpreter
 static char peek(Interpreter *interpret)
 {
     unsigned int position = interpret->position + 1;
+    // Make sure there is no overflow while reading the buffer
+    if (position >= strlen(interpret->buffer))
+    {
+        return '\0';
+    }
     if (position <= interpret->length)
     {
         return interpret->buffer[position];
