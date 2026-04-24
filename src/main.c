@@ -66,7 +66,7 @@ static void file_interpreter(char *path)
         char print_buffer[256];
         strcpy(print_buffer, buffer);
         print_buffer[strcspn(print_buffer, "\r\n")] = '\0';
-        printf("%-30s -> ", print_buffer);
+        printf("%-50s -> ", print_buffer);
 
         // --- PHASE 1: PARSE (Build the tree first!) ---
         reset_interpreter_line(&interpret, buffer);
