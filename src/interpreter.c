@@ -44,7 +44,6 @@ void set_math_const(Interpreter *interpret);
 // Helper function prototypes
 static void make_simple_token(Interpreter *interpret, TokenType type);
 static void set_error_state_interpret(Interpreter *interpret);
-// Helper function to set the error state of the interpreter
 static void set_error_state_symtab(SymbolTable *symtab);
 static bool is_additive_op(TokenType type);
 static bool is_multiplicative_op(TokenType type);

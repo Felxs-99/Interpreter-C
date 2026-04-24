@@ -10,6 +10,9 @@ CMakeLists.txt
 # clang files
 .clangd
 
+# Test files
+calc.txt
+
 # Readme preview files
 README.html
 GEMINI.md
