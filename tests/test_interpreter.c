@@ -668,6 +668,122 @@ UTEST(IfTests, if_non_boolean_condition_errors)
 
 /*
  * ####################
+ * #   Scope Tests    #
+ * ####################
+ */
+
+// Helper: run one statement through parse+analyze with a given symtab
+static bool analyze_str(const char *src, SymbolTable *symtab)
+{
+    Interpreter interpret = {0};
+    init_interpreter(&interpret);
+
+    char *buf = malloc(strlen(src) + 1);
+    memcpy(buf, src, strlen(src) + 1);
+
+    reset_interpreter_line(&interpret, buf);
+    get_next_token(&interpret);
+    ASTNode *tree = statement(&interpret);
+
+    bool ok = !interpret.error_found && tree != NULL;
+    if (ok)
+    {
+        analyze_tree(tree, symtab);
+        ok = !symtab->error_found;
+    }
+
+    free_ast(tree);
+    free_interpreter(&interpret);
+    free(buf);
+    return ok;
+}
+
+// Variable defined in outer scope is found when looking up from inner scope
+UTEST(ScopeTests, lookup_finds_symbol_in_enclosing_scope)
+{
+    SymbolTable outer = {0};
+    init_symtab(&outer);
+
+    // Define x in outer scope
+    ASSERT_TRUE(analyze_str("x = 5", &outer));
+
+    SymbolTable inner = {0};
+    init_symtab(&inner);
+    inner.enclosing_scope = (struct SymbolTable *)&outer;
+
+    // Look up x from inner scope — should succeed
+    ASSERT_TRUE(analyze_str("x", &inner));
+    ASSERT_FALSE(inner.error_found);
+
+    free_symtab(&outer);
+    free_symtab(&inner);
+}
+
+// Variable not defined in any scope triggers error on innermost scope
+UTEST(ScopeTests, lookup_errors_when_not_in_any_scope)
+{
+    SymbolTable outer = {0};
+    init_symtab(&outer);
+
+    SymbolTable inner = {0};
+    init_symtab(&inner);
+    inner.enclosing_scope = (struct SymbolTable *)&outer;
+
+    // y is not defined anywhere
+    ASSERT_FALSE(analyze_str("y", &inner));
+    ASSERT_TRUE(inner.error_found);
+
+    free_symtab(&outer);
+    free_symtab(&inner);
+}
+
+// Variable in inner scope shadows outer — no error, inner version used
+UTEST(ScopeTests, inner_scope_shadows_outer)
+{
+    SymbolTable outer = {0};
+    init_symtab(&outer);
+    analyze_str("x = 1", &outer);
+
+    SymbolTable inner = {0};
+    init_symtab(&inner);
+    inner.enclosing_scope = (struct SymbolTable *)&outer;
+    analyze_str("x = 2", &inner);
+
+    // x defined in both — lookup from inner should find it without error
+    inner.error_found = false;
+    ASSERT_TRUE(analyze_str("x", &inner));
+    ASSERT_FALSE(inner.error_found);
+
+    free_symtab(&outer);
+    free_symtab(&inner);
+}
+
+// Three-level chain: symbol in grandparent found from grandchild
+UTEST(ScopeTests, lookup_walks_three_level_chain)
+{
+    SymbolTable global = {0};
+    init_symtab(&global);
+    analyze_str("x = 42", &global);
+
+    SymbolTable mid = {0};
+    init_symtab(&mid);
+    mid.enclosing_scope = &global;
+
+    SymbolTable inner = {0};
+    init_symtab(&inner);
+    inner.enclosing_scope = &mid;
+
+    // x is only in global — should be found from inner
+    ASSERT_TRUE(analyze_str("x", &inner));
+    ASSERT_FALSE(inner.error_found);
+
+    free_symtab(&global);
+    free_symtab(&mid);
+    free_symtab(&inner);
+}
+
+/*
+ * ####################
  * #   Negativ Tests  #
  * ####################
  */
