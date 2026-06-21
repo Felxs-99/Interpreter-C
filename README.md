@@ -11,6 +11,9 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - **UB-Free Arithmetic:** Completely eliminates C's Undefined Behavior during math operations using `__builtin` compiler extensions to trap hardware-level overflow, underflow, and division-by-zero.
 - **Leak-Free Panic Mode:** Robust error recovery that detects invalid syntax, safely unwinds and frees the dynamically allocated AST, and returns precise diagnostics.
 - **Forgiving Syntax:** 100% whitespace agnostic.
+- **Control Flow:** `if`/`else` and `while` with `{}` block syntax, supporting both inline and multiline forms.
+- **Explicit Output:** `print()` statement for controlled output — file mode is silent by default.
+- **Interactive REPL:** CLI with readline history and smart `...` prompt for multi-line block input.
 
 ## 🛠 Project Roadmap
 - [x] Basic addition and subtraction (`1 + 1`, `-5 + 10`) — *Done 2026-03-05*
@@ -24,12 +27,17 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - [x] Support for bitwise operations like `|`, `&`, `~` and `^` — *Done 2026-04-13*
 - [x] Support for reserved keywords like `const` — *Done 2026-04-15*
 - [x] Semantic Analysis & Symbol Table: Introduce a compile-time analyzer phase to enforce rules before the run-time evaluator executes. — *Done 2026-04-15*
-- [x] Support larger numbers — *Done 2026-04-16* 
-- [ ] Support for more reserved keywords
-- [ ] Support for build in functions like `sin(90)`
-- [ ] Semantic Analysis & Symbol Table: Create an advanced version/ extend it.
-- [ ] Professional Error Reporting: Add line and column tracking to the Lexer to provide Clang-style, exact-location syntax diagnostics.
-- [ ] Functions & The Call Stack: Upgrade the global memory architecture into a Stack of Activation Records to support local scoping and custom function calls.
+- [x] Support larger numbers — *Done 2026-04-16*
+- [x] `if`/`else` control flow with `{}` block syntax — *Done 2026-06-21*
+- [x] `while` loop — *Done 2026-06-21*
+- [x] `print()` built-in statement — *Done 2026-06-21*
+- [x] CLI multi-line block input with brace depth tracking — *Done 2026-06-21*
+- [ ] Scoped symbol table (nested scopes via `enclosing_scope` pointer)
+- [ ] Functions (`def` keyword) with local scope
+- [ ] Built-in math functions like `sin()`, `cos()`
+- [ ] Semantic Analysis: type checking in symbol table
+- [ ] Professional Error Reporting: line and column tracking for Clang-style diagnostics
+- [ ] Functions & The Call Stack: Stack of Activation Records for local scoping
 
 ## 🏗 Engine Architecture
 
