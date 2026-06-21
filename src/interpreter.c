@@ -1064,6 +1064,16 @@ static bool lookup_symbol(SymbolTable *symtab, const char *name)
             return true;
         }
     }
+    // Try to find the variable in the parent scope
+    if (symtab->enclosing_scope != NULL)
+    {
+        bool is_found = lookup_symbol(symtab->enclosing_scope, name);
+        if (!is_found)
+        {
+            symtab->error_found = true;
+        }
+        return is_found;
+    }
 
     printf("Semantic Error: Variable '%s' is not defined!\n", name);
     symtab->error_found = true;

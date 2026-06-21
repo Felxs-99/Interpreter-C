@@ -83,7 +83,7 @@ typedef struct
 } Symbol;
 
 // The Semantic Analyzer's memory, aka symbol table
-typedef struct
+typedef struct SymbolTable
 {
     Symbol *symbols;
     unsigned int count;
