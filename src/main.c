@@ -118,11 +118,22 @@ static void cli()
 
     SymbolTable symtab = {0};
     init_symtab(&symtab);
+    long block_depth = 0;
+
+    char *block_buffer = NULL;
+    long block_size = 0;
     while (1)
     {
+        char *input_buffer;
         // 1. readline handles the prompt AND reads the keystrokes!
-        char *input_buffer = readline(">>> ");
-
+        if (block_depth == 0)
+        {
+            input_buffer = readline(">>> ");
+        }
+        else
+        {
+            input_buffer = readline("... ");
+        }
         // 2. If the user presses Ctrl+D (EOF), input_buffer is NULL
         if (input_buffer == NULL)
         {
@@ -142,57 +153,77 @@ static void cli()
             continue;
         }
 
-        // --- PHASE 1: PARSE (Build the tree first!) ---
-        reset_interpreter_line(&interpret, input_buffer);
-        get_next_token(&interpret);
-        ASTNode *tree = statement(&interpret);
-
-        if (interpret.error_found || tree == NULL)
+        for (int i = 0; input_buffer[i] != '\0'; i++)
         {
-            free_ast(tree);
-            free(input_buffer);
-            continue; // Stop if syntax is bad
+            if (input_buffer[i] == '{')
+            {
+                block_depth++;
+            }
+            if (input_buffer[i] == '}')
+            {
+                block_depth--;
+            }
         }
+
+        block_buffer =
+            realloc(block_buffer, block_size + strlen(input_buffer) + 2);
+        if (block_size == 0)
+        {
+            block_buffer[0] = '\0';
+        }
+        strcat(block_buffer, input_buffer);
+        strcat(block_buffer, "\n");
+        block_size += strlen(input_buffer) + 1;
+        if (block_depth != 0)
+        {
+            continue;
+        }
+        // --- PHASE 1: PARSE (Build the tree first!) ---
+        reset_interpreter_line(&interpret, block_buffer);
+        get_next_token(&interpret);
 
         // --- PHASE 2: SEMANTIC ANALYSIS (Check the rules) ---
-        // Now you actually have a tree to pass in!
-        analyze_tree(tree, &symtab);
-
-        if (symtab.error_found)
+        while (interpret.current_token.type != EOF_TOKEN &&
+               !interpret.error_found)
         {
+
+            if (interpret.current_token.type == EOL)
+            {
+                get_next_token(&interpret);
+                continue;
+            }
+            // --- PHASE 1: PARSE (Build the tree first!) ---
+            ASTNode *tree = statement(&interpret);
+
+            if (interpret.error_found || tree == NULL)
+            {
+                free_ast(tree);
+                break; // Stop if syntax is bad
+            }
+
+            // --- PHASE 2: SEMANTIC ANALYSIS (Check the rules) ---
+            // Now you actually have a tree to pass in!
+            analyze_tree(tree, &symtab);
+
+            if (symtab.error_found)
+            {
+                free_ast(tree);
+                symtab.error_found =
+                    false; // Reset the flag so the next line works!
+                break;     // Stop if rules are broken (like "pi = 4")
+            }
+
+            evaluate(tree, &interpret);
+
+            // --- CLEANUP ---
             free_ast(tree);
-            free(input_buffer);
-            symtab.error_found =
-                false; // Reset the flag so the next line works!
-            continue;  // Stop if rules are broken (like "pi = 4")
         }
-
-        // --- PHASE 3: EVALUATE (Do the math) ---
-        Value final_answer = evaluate(tree, &interpret);
-
-        // Only print if evaluation didn't trigger a runtime error (like divide
-        // by zero)
-        if (!interpret.error_found)
-        {
-            if (final_answer.type == VAL_INT)
-            {
-                printf("%lld\n", final_answer.as.i_val);
-            }
-            else if (final_answer.type == VAL_FLOAT)
-            {
-                printf("%.7g\n", final_answer.as.f_val);
-            }
-            else if (final_answer.type == VAL_BOOL)
-            {
-                printf("%s\n", final_answer.as.b_val ? "true" : "false");
-            }
-        }
-
-        // --- CLEANUP ---
-        free_ast(tree);
         free(input_buffer);
+        free(block_buffer);
+        block_buffer = NULL;
+        block_size = 0;
+        block_depth = 0;
     }
-
     free_interpreter(&interpret);
     free_symtab(&symtab);
 }
