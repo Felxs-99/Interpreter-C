@@ -98,26 +98,7 @@ static void file_interpreter(char *path)
             break;     // Stop if rules are broken (like "pi = 4")
         }
 
-        // --- PHASE 3: EVALUATE (Do the math) ---
-        Value final_answer = evaluate(tree, &interpret);
-
-        // Only print if evaluation didn't trigger a runtime error (like divide
-        // by zero)
-        if (!interpret.error_found)
-        {
-            if (final_answer.type == VAL_INT)
-            {
-                printf("%lld\n", final_answer.as.i_val);
-            }
-            else if (final_answer.type == VAL_FLOAT)
-            {
-                printf("%.7g\n", final_answer.as.f_val);
-            }
-            else if (final_answer.type == VAL_BOOL)
-            {
-                printf("%s\n", final_answer.as.b_val ? "true" : "false");
-            }
-        }
+        evaluate(tree, &interpret);
 
         // --- CLEANUP ---
         free_ast(tree);

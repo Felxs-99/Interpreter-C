@@ -20,6 +20,7 @@ static ASTNode *create_var_node(Token id);
 static ASTNode *create_if_node(ASTNode *condition, ASTNode *body,
                                ASTNode *else_node);
 static ASTNode *create_compound_node(ASTNode *statement, ASTNode *next);
+static ASTNode *create_print_node(ASTNode *expr);
 
 static bool eat(TokenType token, Interpreter *interprete);
 static ASTNode *bitwise_or_expr(Interpreter *interpret);
@@ -81,11 +82,9 @@ typedef struct
     TokenType type;
 } Keyword;
 
-static const Keyword RESERVED_KEYWORD[] = {{"const", CONST},
-                                           {"true", TRUE},
-                                           {"false", FALSE},
-                                           {"if", IF},
-                                           {"else", ELSE}};
+static const Keyword RESERVED_KEYWORD[] = {{"const", CONST}, {"true", TRUE},
+                                           {"false", FALSE}, {"if", IF},
+                                           {"else", ELSE},   {"print", PRINT}};
 
 static const unsigned int NUM_RESERVED_KEYWORDS =
     sizeof(RESERVED_KEYWORD) / sizeof(RESERVED_KEYWORD[0]);
@@ -194,6 +193,18 @@ static ASTNode *create_compound_node(ASTNode *statement, ASTNode *next)
     return node;
 }
 
+// Ast node for print
+static ASTNode *create_print_node(ASTNode *expr)
+{
+    ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
+    node->type = NODE_PRINT;
+    node->token = (Token){0};
+    node->left = expr;
+    node->right = NULL;
+    node->else_node = NULL;
+    return node;
+}
+
 // Clean up for ast
 void free_ast(ASTNode *node)
 {
@@ -268,6 +279,15 @@ ASTNode *statement(Interpreter *interpret)
         ASTNode *right_node = bitwise_or_expr(interpret);
 
         return create_const_assign_node(left_node, assign_token, right_node);
+    }
+
+    if (interpret->current_token.type == PRINT)
+    {
+        eat(PRINT, interpret);
+        eat(LPAREN, interpret);
+        ASTNode *left_node = bitwise_or_expr(interpret);
+        eat(RPAREN, interpret);
+        return create_print_node(left_node);
     }
 
     ASTNode *left_node = bitwise_or_expr(interpret);
@@ -926,14 +946,12 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
             // ignore number nodes for the moment
             break;
         case NODE_IF:
-            analyze_tree(node->left, symtab);
-            analyze_tree(node->right, symtab);
-            break;
-
         case NODE_COMPOUND:
             analyze_tree(node->left, symtab);
             analyze_tree(node->right, symtab);
             break;
+        case NODE_PRINT:
+            analyze_tree(node->left, symtab);
         default:
             break;
     }
@@ -1436,6 +1454,29 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
             {
                 return left_val;
             }
+        }
+        case NODE_PRINT:
+        {
+            Value expr = evaluate(node->left, interpret);
+
+            // Only print if evaluation didn't trigger a runtime error (like
+            // divide by zero)
+            if (!interpret->error_found)
+            {
+                if (expr.type == VAL_INT)
+                {
+                    printf("%lld\n", expr.as.i_val);
+                }
+                else if (expr.type == VAL_FLOAT)
+                {
+                    printf("%.7g\n", expr.as.f_val);
+                }
+                else if (expr.type == VAL_BOOL)
+                {
+                    printf("%s\n", expr.as.b_val ? "true" : "false");
+                }
+            }
+            return (Value){VAL_INT, {.i_val = 0}};
         }
     }
     return (Value){VAL_INT, {.i_val = 0}};

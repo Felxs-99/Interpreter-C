@@ -59,6 +59,7 @@ typedef enum
     CONST,
     IF,
     ELSE,
+    PRINT,
     EOL,
     EOF_TOKEN,
     SPACE,
@@ -121,7 +122,8 @@ typedef enum
     NODE_CONST_ASSIGN,
     NODE_VAR,
     NODE_IF,
-    NODE_COMPOUND
+    NODE_COMPOUND,
+    NODE_PRINT
 } ast_node_type;
 
 // Ast nodes
