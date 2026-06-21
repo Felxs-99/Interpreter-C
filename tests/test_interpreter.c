@@ -515,6 +515,159 @@ UTEST(InterpreterTests, precedence_complex_bitwise)
 
 /*
  * ####################
+ * #   If/Else Tests  #
+ * ####################
+ */
+
+// Helper: runs a full multi-line block through the interpreter
+static TestResult calc_block(const char *src)
+{
+    size_t len = strlen(src);
+    char *buffer = malloc(len + 1);
+    memcpy(buffer, src, len + 1);
+
+    Interpreter interpret = {0};
+    init_interpreter(&interpret);
+
+    SymbolTable symtab = {0};
+    init_symtab(&symtab);
+
+    Value final_answer = {VAL_INT, {.i_val = 0}};
+
+    reset_interpreter_line(&interpret, buffer);
+    get_next_token(&interpret);
+
+    while (interpret.current_token.type != EOF_TOKEN && !interpret.error_found)
+    {
+        if (interpret.current_token.type == EOL)
+        {
+            get_next_token(&interpret);
+            continue;
+        }
+
+        ASTNode *tree = statement(&interpret);
+
+        if (interpret.error_found || tree == NULL)
+        {
+            free_ast(tree);
+            free_interpreter(&interpret);
+            free(buffer);
+            return (TestResult){.answer = (Value){VAL_INT, {.i_val = 0}},
+                                .error = true};
+        }
+
+        analyze_tree(tree, &symtab);
+
+        if (symtab.error_found)
+        {
+            free_ast(tree);
+            symtab.error_found = false;
+            free_interpreter(&interpret);
+            free(buffer);
+            return (TestResult){.answer = (Value){VAL_INT, {.i_val = 0}},
+                                .error = true};
+        }
+
+        final_answer = evaluate(tree, &interpret);
+
+        if (interpret.error_found)
+        {
+            free_ast(tree);
+            free_interpreter(&interpret);
+            free(buffer);
+            return (TestResult){.answer = (Value){VAL_INT, {.i_val = 0}},
+                                .error = true};
+        }
+
+        free_ast(tree);
+    }
+
+    free_interpreter(&interpret);
+    free(buffer);
+    return (TestResult){.answer = final_answer, .error = false};
+}
+
+// if true inline syntax — body executes, returns body result
+UTEST(IfTests, if_true_inline)
+{
+    TestResult result = calc_block("if true { 42 }");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 42);
+}
+
+// if false inline syntax — body skipped, returns 0
+UTEST(IfTests, if_false_inline)
+{
+    TestResult result = calc_block("if false { 42 }");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 0);
+}
+
+// if true multiline syntax
+UTEST(IfTests, if_true_multiline)
+{
+    TestResult result = calc_block("if true\n{\n42\n}");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 42);
+}
+
+// if/else — true branch taken
+UTEST(IfTests, if_else_true_branch)
+{
+    TestResult result = calc_block("if true { 1 } else { 2 }");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 1);
+}
+
+// if/else — else branch taken
+UTEST(IfTests, if_else_false_branch)
+{
+    TestResult result = calc_block("if false { 1 } else { 2 }");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 2);
+}
+
+// if/else multiline — else branch taken
+UTEST(IfTests, if_else_multiline_false_branch)
+{
+    TestResult result = calc_block("if false\n{\n1\n}\nelse\n{\n2\n}");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 2);
+}
+
+// condition is a boolean expression, not a literal
+UTEST(IfTests, if_boolean_expression_condition)
+{
+    TestResult result = calc_block("if 3 > 2 { 99 }");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 99);
+}
+
+// variable assigned inside body is accessible after the block
+UTEST(IfTests, if_body_variable_persists)
+{
+    TestResult result = calc_block("if true { x = 7 }\nx");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 7);
+}
+
+// non-boolean condition triggers runtime error
+UTEST(IfTests, if_non_boolean_condition_errors)
+{
+    TestResult result = calc_block("if 5 { 1 }");
+    ASSERT_TRUE(result.error);
+}
+
+/*
+ * ####################
  * #   Negativ Tests  #
  * ####################
  */

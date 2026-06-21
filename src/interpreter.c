@@ -54,6 +54,7 @@ static bool is_assign_op(TokenType type);
 static bool is_relation_op(TokenType type);
 static char peek(Interpreter *interpret);
 static ASTNode *parse_compound(Interpreter *interpret);
+static void skip_eol(Interpreter *interpret);
 
 // Structure for math constants (to be in one place)
 typedef struct
@@ -223,18 +224,20 @@ ASTNode *statement(Interpreter *interpret)
 
         // The left node should be a boolean expression
         ASTNode *left_node = bitwise_or_expr(interpret);
-
+        skip_eol(interpret);
         eat(LBRACE, interpret);
         ASTNode *right_node = parse_compound(interpret);
         eat(RBRACE, interpret);
+        skip_eol(interpret);
         ASTNode *else_node = NULL;
 
         if (interpret->current_token.type == ELSE)
         {
             eat(ELSE, interpret);
-
+            skip_eol(interpret);
             eat(LBRACE, interpret);
             else_node = parse_compound(interpret);
+            skip_eol(interpret);
             eat(RBRACE, interpret);
         }
         return create_if_node(left_node, right_node, else_node);
@@ -1639,4 +1642,12 @@ static ASTNode *parse_compound(Interpreter *interpret)
     ASTNode *stmt = statement(interpret);
     ASTNode *next = parse_compound(interpret);
     return create_compound_node(stmt, next);
+}
+
+static void skip_eol(Interpreter *interpret)
+{
+    while (interpret->current_token.type == EOL)
+    {
+        get_next_token(interpret);
+    }
 }
