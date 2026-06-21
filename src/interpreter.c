@@ -7,7 +7,6 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdnoreturn.h>
 #include <string.h>
 
 // Parser function prototypes
@@ -15,9 +14,13 @@ static ASTNode *create_literal_node(Token token);
 static ASTNode *create_binop_node(ASTNode *left, Token op, ASTNode *right);
 static ASTNode *create_unaop_node(Token op, ASTNode *right);
 static ASTNode *create_assign_node(ASTNode *left, Token op, ASTNode *right);
-static ASTNode *create_var_node(Token id);
 static ASTNode *create_const_assign_node(ASTNode *left, Token op,
                                          ASTNode *right);
+static ASTNode *create_var_node(Token id);
+static ASTNode *create_if_node(ASTNode *condition, ASTNode *body,
+                               ASTNode *else_node);
+static ASTNode *create_compound_node(ASTNode *statement, ASTNode *next);
+
 static bool eat(TokenType token, Interpreter *interprete);
 static ASTNode *bitwise_or_expr(Interpreter *interpret);
 static ASTNode *bitwise_xor_expr(Interpreter *interpret);
@@ -50,6 +53,7 @@ static bool is_multiplicative_op(TokenType type);
 static bool is_assign_op(TokenType type);
 static bool is_relation_op(TokenType type);
 static char peek(Interpreter *interpret);
+static ASTNode *parse_compound(Interpreter *interpret);
 
 // Structure for math constants (to be in one place)
 typedef struct
@@ -76,11 +80,15 @@ typedef struct
     TokenType type;
 } Keyword;
 
-static const Keyword RESERVED_KEYWORD[] = {
-    {"const", CONST}, {"true", TRUE}, {"false", FALSE}};
+static const Keyword RESERVED_KEYWORD[] = {{"const", CONST},
+                                           {"true", TRUE},
+                                           {"false", FALSE},
+                                           {"if", IF},
+                                           {"else", ELSE}};
 
 static const unsigned int NUM_RESERVED_KEYWORDS =
     sizeof(RESERVED_KEYWORD) / sizeof(RESERVED_KEYWORD[0]);
+
 /*
  * ####################
  * #     PARSER       #
@@ -95,6 +103,7 @@ static ASTNode *create_literal_node(Token token)
     node->token = token;
     node->left = NULL;
     node->right = NULL;
+    node->else_node = NULL;
     return node;
 }
 
@@ -106,6 +115,7 @@ static ASTNode *create_binop_node(ASTNode *left, Token op, ASTNode *right)
     node->token = op;
     node->left = left;
     node->right = right;
+    node->else_node = NULL;
     return node;
 }
 
@@ -117,6 +127,7 @@ static ASTNode *create_unaop_node(Token op, ASTNode *expr)
     node->token = op;
     node->left = NULL;
     node->right = expr;
+    node->else_node = NULL;
     return node;
 }
 
@@ -128,6 +139,7 @@ static ASTNode *create_assign_node(ASTNode *left, Token op, ASTNode *right)
     node->token = op;
     node->left = left;
     node->right = right;
+    node->else_node = NULL;
     return node;
 }
 
@@ -140,6 +152,7 @@ static ASTNode *create_const_assign_node(ASTNode *left, Token op,
     node->token = op;
     node->left = left;
     node->right = right;
+    node->else_node = NULL;
     return node;
 }
 
@@ -151,6 +164,32 @@ static ASTNode *create_var_node(Token id)
     node->token = id;
     node->left = NULL;
     node->right = NULL;
+    node->else_node = NULL;
+    return node;
+}
+
+// Ast node for if statement
+static ASTNode *create_if_node(ASTNode *condition, ASTNode *body,
+                               ASTNode *else_node)
+{
+    ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
+    node->type = NODE_IF;
+    node->token = (Token){0};
+    node->left = condition;
+    node->right = body;
+    node->else_node = else_node;
+    return node;
+}
+
+// Ast node for statement compound
+static ASTNode *create_compound_node(ASTNode *statement, ASTNode *next)
+{
+    ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
+    node->type = NODE_COMPOUND;
+    node->token = (Token){0};
+    node->left = statement;
+    node->right = next;
+    node->else_node = NULL;
     return node;
 }
 
@@ -161,6 +200,7 @@ void free_ast(ASTNode *node)
         return;
     free_ast(node->left); // Free children first (Post-order traversal)
     free_ast(node->right);
+    free_ast(node->else_node);
     free(node); // Then free the parent
 }
 
@@ -177,6 +217,28 @@ static bool eat(TokenType token, Interpreter *interpret)
 
 ASTNode *statement(Interpreter *interpret)
 {
+    if (interpret->current_token.type == IF)
+    {
+        eat(IF, interpret);
+
+        // The left node should be a boolean expression
+        ASTNode *left_node = bitwise_or_expr(interpret);
+
+        eat(LBRACE, interpret);
+        ASTNode *right_node = parse_compound(interpret);
+        eat(RBRACE, interpret);
+        ASTNode *else_node = NULL;
+
+        if (interpret->current_token.type == ELSE)
+        {
+            eat(ELSE, interpret);
+
+            eat(LBRACE, interpret);
+            else_node = parse_compound(interpret);
+            eat(RBRACE, interpret);
+        }
+        return create_if_node(left_node, right_node, else_node);
+    }
     if (interpret->current_token.type == CONST)
     {
         eat(CONST, interpret);
@@ -770,6 +832,12 @@ void get_next_token(Interpreter *interpret)
         case ')':
             make_simple_token(interpret, RPAREN);
             return;
+        case '{':
+            make_simple_token(interpret, LBRACE);
+            return;
+        case '}':
+            make_simple_token(interpret, RBRACE);
+            return;
         case '|':
             make_simple_token(interpret, BIT_OR);
             return;
@@ -783,8 +851,10 @@ void get_next_token(Interpreter *interpret)
             make_simple_token(interpret, BIT_NOT);
             return;
         case '\n':
-        case '\0':
             make_simple_token(interpret, EOL);
+            return;
+        case '\0':
+            make_simple_token(interpret, EOF_TOKEN);
             return;
         default:
             break;
@@ -851,6 +921,15 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
             break;
         case NODE_LITERAL:
             // ignore number nodes for the moment
+            break;
+        case NODE_IF:
+            analyze_tree(node->left, symtab);
+            analyze_tree(node->right, symtab);
+            break;
+
+        case NODE_COMPOUND:
+            analyze_tree(node->left, symtab);
+            analyze_tree(node->right, symtab);
             break;
         default:
             break;
@@ -1315,6 +1394,46 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
         {
             return get_variable(interpret, node->token.name);
         }
+        case NODE_IF:
+        {
+            Value left_val = evaluate(node->left, interpret);
+            Value right_val = (Value){0};
+            // Statement must be a boolean (no C style shinanigans)
+            if (left_val.type == VAL_BOOL)
+            {
+                if (node->right != NULL && left_val.as.b_val == true)
+                {
+                    right_val = evaluate(node->right, interpret);
+                }
+                else if (node->else_node != NULL && left_val.as.b_val == false)
+                {
+                    right_val = evaluate(node->else_node, interpret);
+                }
+                return right_val;
+            }
+            else
+            {
+                printf("Runtime Error: If-Statement requires a boolean "
+                       "expression.\n");
+                interpret->error_found = true;
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
+            return (Value){VAL_INT, {.i_val = 0}};
+        }
+        case NODE_COMPOUND:
+        {
+            Value left_val = evaluate(node->left, interpret);
+            Value right_val = (Value){0};
+            if (node->right != NULL)
+            {
+                right_val = evaluate(node->right, interpret);
+                return right_val;
+            }
+            else
+            {
+                return left_val;
+            }
+        }
     }
     return (Value){VAL_INT, {.i_val = 0}};
 }
@@ -1504,4 +1623,20 @@ static char peek(Interpreter *interpret)
         return interpret->buffer[position];
     }
     return '\0';
+}
+
+// Helper to build the statement compound
+static ASTNode *parse_compound(Interpreter *interpret)
+{
+    if (interpret->current_token.type == EOL)
+    {
+        get_next_token(interpret);
+    }
+    if (interpret->current_token.type == RBRACE)
+    {
+        return NULL;
+    }
+    ASTNode *stmt = statement(interpret);
+    ASTNode *next = parse_compound(interpret);
+    return create_compound_node(stmt, next);
 }

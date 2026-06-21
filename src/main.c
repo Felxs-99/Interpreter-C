@@ -53,24 +53,31 @@ static void file_interpreter(char *path)
         return;
     }
 
-    char buffer[256];
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    char *buffer = malloc(file_size + 1);
 
     Interpreter interpret = {0};
     init_interpreter(&interpret);
 
     SymbolTable symtab = {0};
     init_symtab(&symtab);
-
-    while (fgets(buffer, sizeof(buffer), file))
+    fread(buffer, 1, file_size, file);
+    // Null ternmination of the buffer
+    buffer[file_size] = '\0';
+    reset_interpreter_line(&interpret, buffer);
+    get_next_token(&interpret);
+    while (interpret.current_token.type != EOF_TOKEN && !interpret.error_found)
     {
-        char print_buffer[256];
-        strcpy(print_buffer, buffer);
-        print_buffer[strcspn(print_buffer, "\r\n")] = '\0';
-        printf("%-50s -> ", print_buffer);
 
+        if (interpret.current_token.type == EOL)
+        {
+            get_next_token(&interpret);
+            continue;
+        }
         // --- PHASE 1: PARSE (Build the tree first!) ---
-        reset_interpreter_line(&interpret, buffer);
-        get_next_token(&interpret);
         ASTNode *tree = statement(&interpret);
 
         if (interpret.error_found || tree == NULL)

@@ -40,6 +40,8 @@ typedef enum
     DIV,
     LPAREN,
     RPAREN,
+    LBRACE,
+    RBRACE,
     ID,
     ASSIGN,
     EQUAL,
@@ -55,7 +57,10 @@ typedef enum
     TRUE,
     FALSE,
     CONST,
+    IF,
+    ELSE,
     EOL,
+    EOF_TOKEN,
     SPACE,
     ERROR,
 } TokenType;
@@ -82,6 +87,7 @@ typedef struct
     unsigned int count;
     unsigned int capacity;
     bool error_found;
+    struct SymbolTable *enclosing_scope;
 } SymbolTable;
 
 // Represents a runtime value in memory
@@ -113,7 +119,9 @@ typedef enum
     NODE_UNAOP,
     NODE_ASSIGN,
     NODE_CONST_ASSIGN,
-    NODE_VAR
+    NODE_VAR,
+    NODE_IF,
+    NODE_COMPOUND
 } ast_node_type;
 
 // Ast nodes
@@ -123,6 +131,7 @@ typedef struct ASTNode
     Token token;
     struct ASTNode *left;
     struct ASTNode *right;
+    struct ASTNode *else_node;
 } ASTNode;
 
 // Statement function
