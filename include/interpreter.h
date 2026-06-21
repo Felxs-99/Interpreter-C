@@ -59,6 +59,7 @@ typedef enum
     CONST,
     IF,
     ELSE,
+    WHILE,
     PRINT,
     EOL,
     EOF_TOKEN,
@@ -123,6 +124,7 @@ typedef enum
     NODE_VAR,
     NODE_IF,
     NODE_COMPOUND,
+    NODE_WHILE,
     NODE_PRINT
 } ast_node_type;
 

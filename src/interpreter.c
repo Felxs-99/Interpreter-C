@@ -20,6 +20,7 @@ static ASTNode *create_var_node(Token id);
 static ASTNode *create_if_node(ASTNode *condition, ASTNode *body,
                                ASTNode *else_node);
 static ASTNode *create_compound_node(ASTNode *statement, ASTNode *next);
+static ASTNode *create_while_node(ASTNode *condition, ASTNode *body);
 static ASTNode *create_print_node(ASTNode *expr);
 
 static bool eat(TokenType token, Interpreter *interprete);
@@ -82,9 +83,9 @@ typedef struct
     TokenType type;
 } Keyword;
 
-static const Keyword RESERVED_KEYWORD[] = {{"const", CONST}, {"true", TRUE},
-                                           {"false", FALSE}, {"if", IF},
-                                           {"else", ELSE},   {"print", PRINT}};
+static const Keyword RESERVED_KEYWORD[] = {
+    {"const", CONST}, {"true", TRUE},   {"false", FALSE}, {"if", IF},
+    {"else", ELSE},   {"print", PRINT}, {"while", WHILE}};
 
 static const unsigned int NUM_RESERVED_KEYWORDS =
     sizeof(RESERVED_KEYWORD) / sizeof(RESERVED_KEYWORD[0]);
@@ -193,6 +194,18 @@ static ASTNode *create_compound_node(ASTNode *statement, ASTNode *next)
     return node;
 }
 
+// Ast node for while loop
+static ASTNode *create_while_node(ASTNode *condition, ASTNode *body)
+{
+    ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
+    node->type = NODE_WHILE;
+    node->token = (Token){0};
+    node->left = condition;
+    node->right = body;
+    node->else_node = NULL;
+    return node;
+}
+
 // Ast node for print
 static ASTNode *create_print_node(ASTNode *expr)
 {
@@ -252,6 +265,21 @@ ASTNode *statement(Interpreter *interpret)
             eat(RBRACE, interpret);
         }
         return create_if_node(left_node, right_node, else_node);
+    }
+
+    if (interpret->current_token.type == WHILE)
+    {
+        eat(WHILE, interpret);
+
+        // The left node should be a boolean expression
+        ASTNode *left_node = bitwise_or_expr(interpret);
+        skip_eol(interpret);
+        eat(LBRACE, interpret);
+        ASTNode *right_node = parse_compound(interpret);
+        eat(RBRACE, interpret);
+        skip_eol(interpret);
+
+        return create_while_node(left_node, right_node);
     }
     if (interpret->current_token.type == CONST)
     {
@@ -946,7 +974,15 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
             // ignore number nodes for the moment
             break;
         case NODE_IF:
+            analyze_tree(node->left, symtab);
+            analyze_tree(node->right, symtab);
+            analyze_tree(node->else_node, symtab);
+            break;
         case NODE_COMPOUND:
+            analyze_tree(node->left, symtab);
+            analyze_tree(node->right, symtab);
+            break;
+        case NODE_WHILE:
             analyze_tree(node->left, symtab);
             analyze_tree(node->right, symtab);
             break;
@@ -1455,6 +1491,40 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                 return left_val;
             }
         }
+        case NODE_WHILE:
+        {
+            Value left_val = evaluate(node->left, interpret);
+            Value right_val = (Value){0};
+            // Statement must be a boolean (no C style shinanigans)
+            if (left_val.type == VAL_BOOL)
+            {
+                while (left_val.as.b_val && !interpret->error_found)
+                {
+                    right_val = evaluate(node->right, interpret);
+                    // Reevaluating the statement every time and check if its
+                    // still a boolean
+                    left_val = evaluate(node->left, interpret);
+                    if (left_val.type != VAL_BOOL)
+                    {
+                        printf(
+                            "Runtime Error: While-Statement requires a boolean "
+                            "expression.\n");
+                        interpret->error_found = true;
+                        break;
+                    }
+                }
+                return right_val;
+            }
+            else
+            {
+                printf("Runtime Error: While-Statement requires a boolean "
+                       "expression.\n");
+                interpret->error_found = true;
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
+
+            return right_val;
+        }
         case NODE_PRINT:
         {
             Value expr = evaluate(node->left, interpret);
@@ -1535,7 +1605,8 @@ void free_interpreter(Interpreter *interpret)
     interpret->mem_capacity = 0;
 }
 
-// Check if a variable name is already known and if not save it as a new name
+// Check if a variable name is already known and if not save it as a new
+// name
 static void set_variable(Interpreter *interpret, const char *name, Value value)
 {
     // Check if the variable already exist and if yes update it
@@ -1582,7 +1653,8 @@ static void set_variable(Interpreter *interpret, const char *name, Value value)
     }
 }
 
-// Check if a variable exists in the symbol table and if yes returns the value
+// Check if a variable exists in the symbol table and if yes returns the
+// value
 static Value get_variable(Interpreter *interpret, const char *name)
 {
     for (unsigned int i = 0; i < interpret->mem_count; i++)
