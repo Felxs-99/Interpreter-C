@@ -606,6 +606,7 @@ void get_next_token(Interpreter *interpret)
         char temp_num[64] = {0};
         unsigned int temp_pos = 0;
         bool has_decimal = false;
+        bool has_exponent = false;
 
         // Check if a binary or hex number provided
         if (current_char == '0')
@@ -697,20 +698,42 @@ void get_next_token(Interpreter *interpret)
 
         // Get every following digit and make it one number
         while (isdigit(interpret->buffer[interpret->position]) ||
-               interpret->buffer[interpret->position] == '.')
+               interpret->buffer[interpret->position] == '.' ||
+               interpret->buffer[interpret->position] == 'e' ||
+               interpret->buffer[interpret->position] == 'E')
         {
             char c = interpret->buffer[interpret->position];
 
             // Check for decimal point
             if (c == '.')
             {
-                if (has_decimal)
+                if (has_decimal && !has_exponent)
                 {
                     printf("Syntax Error: Multiple decimal points!\n");
                     set_error_state_interpret(interpret);
                     return;
                 }
 
+                if (has_decimal && has_exponent)
+                {
+                    printf("Syntax Error: Decimal point is not allowed in the "
+                           "exponent!\n");
+                    set_error_state_interpret(interpret);
+                    return;
+                }
+
+                has_decimal = true;
+            }
+            else if (c == 'e' || c == 'E')
+            {
+                if (has_exponent)
+                {
+                    printf("Syntax Error: Multiple exponets detected!");
+                    set_error_state_interpret(interpret);
+                    return;
+                }
+
+                has_exponent = true;
                 has_decimal = true;
             }
             // Prevent temp buffer overflow
@@ -722,13 +745,21 @@ void get_next_token(Interpreter *interpret)
             }
 
             temp_num[temp_pos++] = c;
-
+            if (c == 'e' || c == 'E')
+            {
+                if (peek(interpret) == '+' || peek(interpret) == '-')
+                {
+                    interpret->position++;
+                    temp_num[temp_pos++] =
+                        interpret->buffer[interpret->position];
+                }
+            }
             interpret->position++;
         }
 
         temp_num[temp_pos] = '\0';
         errno = 0;
-        if (has_decimal)
+        if (has_decimal || has_exponent)
         {
             token.type = FLOAT;
             token.value.type = VAL_FLOAT;
