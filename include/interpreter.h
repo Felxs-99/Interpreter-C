@@ -126,6 +126,8 @@ typedef enum
     NODE_IF,
     NODE_COMPOUND,
     NODE_WHILE,
+    NODE_FUNC_DEF,
+    NODE_FUNC_CALL,
     NODE_PRINT
 } ast_node_type;
 
@@ -136,7 +138,22 @@ typedef struct ASTNode
     Token token;
     struct ASTNode *left;
     struct ASTNode *right;
-    struct ASTNode *else_node;
+    union
+    {
+        struct ASTNode *else_node; // NODE_IF
+        struct
+        { // NODE_FUNC_DEF
+            char *name;
+            char **params;
+            int param_count;
+        } func_def;
+        struct
+        { // NODE_FUNC_CALL
+            char *name;
+            struct ASTNode **args;
+            int arg_count;
+        } func_call;
+    } ext;
 } ASTNode;
 
 // Statement function

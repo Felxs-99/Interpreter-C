@@ -21,6 +21,11 @@ static ASTNode *create_if_node(ASTNode *condition, ASTNode *body,
                                ASTNode *else_node);
 static ASTNode *create_compound_node(ASTNode *statement, ASTNode *next);
 static ASTNode *create_while_node(ASTNode *condition, ASTNode *body);
+static ASTNode *create_function_def_node(char *function_name, char **parameter,
+                                         int parameter_count, ASTNode *body);
+static ASTNode *create_function_def_call(char *function_name,
+                                         ASTNode **arguments,
+                                         int arguments_count);
 static ASTNode *create_print_node(ASTNode *expr);
 
 static bool eat(TokenType token, Interpreter *interprete);
@@ -109,7 +114,7 @@ static ASTNode *create_literal_node(Token token)
     node->token = token;
     node->left = NULL;
     node->right = NULL;
-    node->else_node = NULL;
+    node->ext.else_node = NULL;
     return node;
 }
 
@@ -121,7 +126,7 @@ static ASTNode *create_binop_node(ASTNode *left, Token op, ASTNode *right)
     node->token = op;
     node->left = left;
     node->right = right;
-    node->else_node = NULL;
+    node->ext.else_node = NULL;
     return node;
 }
 
@@ -133,7 +138,7 @@ static ASTNode *create_unaop_node(Token op, ASTNode *expr)
     node->token = op;
     node->left = NULL;
     node->right = expr;
-    node->else_node = NULL;
+    node->ext.else_node = NULL;
     return node;
 }
 
@@ -145,7 +150,7 @@ static ASTNode *create_assign_node(ASTNode *left, Token op, ASTNode *right)
     node->token = op;
     node->left = left;
     node->right = right;
-    node->else_node = NULL;
+    node->ext.else_node = NULL;
     return node;
 }
 
@@ -158,7 +163,7 @@ static ASTNode *create_const_assign_node(ASTNode *left, Token op,
     node->token = op;
     node->left = left;
     node->right = right;
-    node->else_node = NULL;
+    node->ext.else_node = NULL;
     return node;
 }
 
@@ -170,7 +175,7 @@ static ASTNode *create_var_node(Token id)
     node->token = id;
     node->left = NULL;
     node->right = NULL;
-    node->else_node = NULL;
+    node->ext.else_node = NULL;
     return node;
 }
 
@@ -183,7 +188,7 @@ static ASTNode *create_if_node(ASTNode *condition, ASTNode *body,
     node->token = (Token){0};
     node->left = condition;
     node->right = body;
-    node->else_node = else_node;
+    node->ext.else_node = else_node;
     return node;
 }
 
@@ -195,7 +200,7 @@ static ASTNode *create_compound_node(ASTNode *statement, ASTNode *next)
     node->token = (Token){0};
     node->left = statement;
     node->right = next;
-    node->else_node = NULL;
+    node->ext.else_node = NULL;
     return node;
 }
 
@@ -207,7 +212,38 @@ static ASTNode *create_while_node(ASTNode *condition, ASTNode *body)
     node->token = (Token){0};
     node->left = condition;
     node->right = body;
-    node->else_node = NULL;
+    node->ext.else_node = NULL;
+    return node;
+}
+
+// Ast node for function definition
+static ASTNode *create_function_def_node(char *function_name, char **parameter,
+                                         int parameter_count, ASTNode *body)
+{
+    ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
+    node->type = NODE_FUNC_DEF;
+    node->token = (Token){0};
+    node->left = body;
+    node->right = NULL;
+    node->ext.func_def.name = function_name;
+    node->ext.func_def.params = parameter;
+    node->ext.func_def.param_count = parameter_count;
+    return node;
+}
+
+// Ast node for function call
+static ASTNode *create_function_def_call(char *function_name,
+                                         ASTNode **arguments,
+                                         int arguments_count)
+{
+    ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
+    node->type = NODE_FUNC_CALL;
+    node->token = (Token){0};
+    node->left = NULL;
+    node->right = NULL;
+    node->ext.func_call.name = function_name;
+    node->ext.func_call.args = arguments;
+    node->ext.func_call.arg_count = arguments_count;
     return node;
 }
 
@@ -219,7 +255,7 @@ static ASTNode *create_print_node(ASTNode *expr)
     node->token = (Token){0};
     node->left = expr;
     node->right = NULL;
-    node->else_node = NULL;
+    node->ext.else_node = NULL;
     return node;
 }
 
@@ -230,7 +266,6 @@ void free_ast(ASTNode *node)
         return;
     free_ast(node->left); // Free children first (Post-order traversal)
     free_ast(node->right);
-    free_ast(node->else_node);
     free(node); // Then free the parent
 }
 
@@ -246,7 +281,10 @@ static bool eat(TokenType token, Interpreter *interpret)
 }
 
 // Helper function to parse the function keyword
-static ASTNode *parse_function(Interpreter *interpret) {}
+static ASTNode *parse_function(Interpreter *interpret)
+{
+    eat(FUNCTION, interpret);
+}
 
 // Helper function to parse the if keyword
 static ASTNode *parse_if(Interpreter *interpret)
@@ -1037,7 +1075,7 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
         case NODE_IF:
             analyze_tree(node->left, symtab);
             analyze_tree(node->right, symtab);
-            analyze_tree(node->else_node, symtab);
+            analyze_tree(node->ext.else_node, symtab);
             break;
         case NODE_COMPOUND:
             analyze_tree(node->left, symtab);
@@ -1533,9 +1571,10 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                 {
                     right_val = evaluate(node->right, interpret);
                 }
-                else if (node->else_node != NULL && left_val.as.b_val == false)
+                else if (node->ext.else_node != NULL &&
+                         left_val.as.b_val == false)
                 {
-                    right_val = evaluate(node->else_node, interpret);
+                    right_val = evaluate(node->ext.else_node, interpret);
                 }
                 return right_val;
             }
