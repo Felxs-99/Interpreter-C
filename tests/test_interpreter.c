@@ -783,6 +783,80 @@ UTEST(ScopeTests, lookup_walks_three_level_chain)
 }
 
 /*
+ * ##########################
+ * # Scientific Notation    #
+ * ##########################
+ */
+
+UTEST(ScientificNotationTests, positive_exponent)
+{
+    char test_expr[] = "1e3";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 1000.0, 1e-9);
+}
+
+UTEST(ScientificNotationTests, negative_exponent)
+{
+    char test_expr[] = "1e-3";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 0.001, 1e-9);
+}
+
+UTEST(ScientificNotationTests, positive_exponent_explicit_sign)
+{
+    char test_expr[] = "1e+3";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 1000.0, 1e-9);
+}
+
+UTEST(ScientificNotationTests, float_mantissa_with_exponent)
+{
+    char test_expr[] = "1.5e2";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 150.0, 1e-9);
+}
+
+UTEST(ScientificNotationTests, uppercase_E)
+{
+    char test_expr[] = "2E3";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 2000.0, 1e-9);
+}
+
+UTEST(ScientificNotationTests, result_is_always_float)
+{
+    char test_expr[] = "10e0";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 10.0, 1e-9);
+}
+
+UTEST(ScientificNotationTests, decimal_in_exponent_errors)
+{
+    char test_expr[] = "1e1.0";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_TRUE(result.error);
+}
+
+UTEST(ScientificNotationTests, multiple_exponents_errors)
+{
+    char test_expr[] = "1e2e3";
+    TestResult result = calc(test_expr, sizeof(test_expr));
+    ASSERT_TRUE(result.error);
+}
+
+/*
  * ####################
  * #   Negativ Tests  #
  * ####################

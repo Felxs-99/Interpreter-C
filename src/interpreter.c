@@ -728,7 +728,7 @@ void get_next_token(Interpreter *interpret)
             {
                 if (has_exponent)
                 {
-                    printf("Syntax Error: Multiple exponets detected!");
+                    printf("Syntax Error: Multiple exponets detected!\n");
                     set_error_state_interpret(interpret);
                     return;
                 }
