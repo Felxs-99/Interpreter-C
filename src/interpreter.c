@@ -24,6 +24,11 @@ static ASTNode *create_while_node(ASTNode *condition, ASTNode *body);
 static ASTNode *create_print_node(ASTNode *expr);
 
 static bool eat(TokenType token, Interpreter *interprete);
+static ASTNode *parse_function(Interpreter *interpret);
+static ASTNode *parse_if(Interpreter *interpret);
+static ASTNode *parse_while(Interpreter *interpret);
+static ASTNode *parse_const(Interpreter *interpret);
+static ASTNode *parse_print(Interpreter *interpret);
 static ASTNode *bitwise_or_expr(Interpreter *interpret);
 static ASTNode *bitwise_xor_expr(Interpreter *interpret);
 static ASTNode *bitwise_and_expr(Interpreter *interpret);
@@ -85,7 +90,7 @@ typedef struct
 
 static const Keyword RESERVED_KEYWORD[] = {
     {"const", CONST}, {"true", TRUE},   {"false", FALSE}, {"if", IF},
-    {"else", ELSE},   {"print", PRINT}, {"while", WHILE}};
+    {"else", ELSE},   {"print", PRINT}, {"while", WHILE}, {"def", FUNCTION}};
 
 static const unsigned int NUM_RESERVED_KEYWORDS =
     sizeof(RESERVED_KEYWORD) / sizeof(RESERVED_KEYWORD[0]);
@@ -240,82 +245,107 @@ static bool eat(TokenType token, Interpreter *interpret)
     return false;
 }
 
+// Helper function to parse the function keyword
+static ASTNode *parse_function(Interpreter *interpret) {}
+
+// Helper function to parse the if keyword
+static ASTNode *parse_if(Interpreter *interpret)
+{
+    eat(IF, interpret);
+
+    // The left node should be a boolean expression
+    ASTNode *left_node = bitwise_or_expr(interpret);
+    skip_eol(interpret);
+    eat(LBRACE, interpret);
+    ASTNode *right_node = parse_compound(interpret);
+    eat(RBRACE, interpret);
+    skip_eol(interpret);
+    ASTNode *else_node = NULL;
+
+    if (interpret->current_token.type == ELSE)
+    {
+        eat(ELSE, interpret);
+        skip_eol(interpret);
+        eat(LBRACE, interpret);
+        else_node = parse_compound(interpret);
+        skip_eol(interpret);
+        eat(RBRACE, interpret);
+    }
+    return create_if_node(left_node, right_node, else_node);
+}
+
+// Helper function to parse the while keyword
+static ASTNode *parse_while(Interpreter *interpret)
+{
+    eat(WHILE, interpret);
+
+    // The left node should be a boolean expression
+    ASTNode *left_node = bitwise_or_expr(interpret);
+    skip_eol(interpret);
+    eat(LBRACE, interpret);
+    ASTNode *right_node = parse_compound(interpret);
+    eat(RBRACE, interpret);
+    skip_eol(interpret);
+
+    return create_while_node(left_node, right_node);
+}
+
+// Helper function to parse the const keyword
+static ASTNode *parse_const(Interpreter *interpret)
+{
+    eat(CONST, interpret);
+
+    Token id_token = interpret->current_token;
+    if (!eat(ID, interpret))
+    {
+        printf("Syntax Error: Expected variable name after 'const'.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
+
+    ASTNode *left_node = create_var_node(id_token);
+
+    Token assign_token = interpret->current_token;
+
+    if (!eat(ASSIGN, interpret))
+    {
+        printf("Syntax Error: Expected '=' after constant name.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
+
+    ASTNode *right_node = bitwise_or_expr(interpret);
+
+    return create_const_assign_node(left_node, assign_token, right_node);
+}
+
+// Helper function to parse the print keyword
+static ASTNode *parse_print(Interpreter *interpret)
+{
+    eat(PRINT, interpret);
+    eat(LPAREN, interpret);
+    ASTNode *left_node = bitwise_or_expr(interpret);
+    eat(RPAREN, interpret);
+    return create_print_node(left_node);
+}
+
 ASTNode *statement(Interpreter *interpret)
 {
-    if (interpret->current_token.type == IF)
+    // Parsing the different keywords
+    switch (interpret->current_token.type)
     {
-        eat(IF, interpret);
-
-        // The left node should be a boolean expression
-        ASTNode *left_node = bitwise_or_expr(interpret);
-        skip_eol(interpret);
-        eat(LBRACE, interpret);
-        ASTNode *right_node = parse_compound(interpret);
-        eat(RBRACE, interpret);
-        skip_eol(interpret);
-        ASTNode *else_node = NULL;
-
-        if (interpret->current_token.type == ELSE)
-        {
-            eat(ELSE, interpret);
-            skip_eol(interpret);
-            eat(LBRACE, interpret);
-            else_node = parse_compound(interpret);
-            skip_eol(interpret);
-            eat(RBRACE, interpret);
-        }
-        return create_if_node(left_node, right_node, else_node);
-    }
-
-    if (interpret->current_token.type == WHILE)
-    {
-        eat(WHILE, interpret);
-
-        // The left node should be a boolean expression
-        ASTNode *left_node = bitwise_or_expr(interpret);
-        skip_eol(interpret);
-        eat(LBRACE, interpret);
-        ASTNode *right_node = parse_compound(interpret);
-        eat(RBRACE, interpret);
-        skip_eol(interpret);
-
-        return create_while_node(left_node, right_node);
-    }
-    if (interpret->current_token.type == CONST)
-    {
-        eat(CONST, interpret);
-
-        Token id_token = interpret->current_token;
-        if (!eat(ID, interpret))
-        {
-            printf("Syntax Error: Expected variable name after 'const'.\n");
-            set_error_state_interpret(interpret);
-            return NULL;
-        }
-
-        ASTNode *left_node = create_var_node(id_token);
-
-        Token assign_token = interpret->current_token;
-
-        if (!eat(ASSIGN, interpret))
-        {
-            printf("Syntax Error: Expected '=' after constant name.\n");
-            set_error_state_interpret(interpret);
-            return NULL;
-        }
-
-        ASTNode *right_node = bitwise_or_expr(interpret);
-
-        return create_const_assign_node(left_node, assign_token, right_node);
-    }
-
-    if (interpret->current_token.type == PRINT)
-    {
-        eat(PRINT, interpret);
-        eat(LPAREN, interpret);
-        ASTNode *left_node = bitwise_or_expr(interpret);
-        eat(RPAREN, interpret);
-        return create_print_node(left_node);
+        case FUNCTION:
+            return parse_function(interpret);
+        case IF:
+            return parse_if(interpret);
+        case WHILE:
+            return parse_while(interpret);
+        case CONST:
+            return parse_const(interpret);
+        case PRINT:
+            return parse_print(interpret);
+        default:
+            break;
     }
 
     ASTNode *left_node = bitwise_or_expr(interpret);

@@ -60,6 +60,7 @@ typedef enum
     IF,
     ELSE,
     WHILE,
+    FUNCTION,
     PRINT,
     EOL,
     EOF_TOKEN,
