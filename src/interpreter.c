@@ -284,6 +284,63 @@ static bool eat(TokenType token, Interpreter *interpret)
 static ASTNode *parse_function(Interpreter *interpret)
 {
     eat(FUNCTION, interpret);
+
+    // Grab the name of the function
+    char *func_name = NULL;
+    if (interpret->current_token.type == ID)
+    {
+        func_name = strdup(interpret->current_token.name);
+    }
+    else
+    {
+        printf("Syntax Error: Expected a function name after 'def'.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
+    eat(ID, interpret);
+    eat(LPAREN, interpret);
+
+    // Parse parameter list
+    char **parameter_name = NULL;
+    int parameter_count = 0;
+    while (interpret->current_token.type == ID)
+    {
+        parameter_name =
+            realloc(parameter_name, (parameter_count + 1) * sizeof(char *));
+        parameter_name[parameter_count] = strdup(interpret->current_token.name);
+        parameter_count++;
+        eat(ID, interpret);
+
+        // Check if there is a comma after the parameter
+        if (interpret->current_token.type == COMMA)
+        {
+            eat(COMMA, interpret);
+            if (interpret->current_token.type != ID)
+            {
+                printf("Syntax Error: Expected parameter name after ','\n");
+                set_error_state_interpret(interpret);
+                goto cleanup;
+            }
+        }
+    }
+    eat(RPAREN, interpret);
+
+    // Parse the body
+    skip_eol(interpret);
+    eat(LBRACE, interpret);
+    ASTNode *left_node = parse_compound(interpret);
+    eat(RBRACE, interpret);
+
+    return create_function_def_node(func_name, parameter_name, parameter_count,
+                                    left_node);
+
+    // Clean up lable
+cleanup:
+    for (int i = 0; i < parameter_count; i++)
+        free(parameter_name[i]);
+    free(parameter_name);
+    free(func_name);
+    return NULL;
 }
 
 // Helper function to parse the if keyword
@@ -999,6 +1056,9 @@ void get_next_token(Interpreter *interpret)
             return;
         case '~':
             make_simple_token(interpret, BIT_NOT);
+            return;
+        case ',':
+            make_simple_token(interpret, COMMA);
             return;
         case '\n':
             make_simple_token(interpret, EOL);

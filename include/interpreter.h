@@ -62,6 +62,7 @@ typedef enum
     WHILE,
     FUNCTION,
     PRINT,
+    COMMA,
     EOL,
     EOF_TOKEN,
     SPACE,
