@@ -283,7 +283,12 @@ static bool eat(TokenType token, Interpreter *interpret)
 // Helper function to parse the function keyword
 static ASTNode *parse_function(Interpreter *interpret)
 {
-    eat(FUNCTION, interpret);
+    if (!eat(FUNCTION, interpret))
+    {
+        printf("Syntax Error: Expected keyword 'def'.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
 
     // Grab the name of the function
     char *func_name = NULL;
@@ -297,8 +302,18 @@ static ASTNode *parse_function(Interpreter *interpret)
         set_error_state_interpret(interpret);
         return NULL;
     }
-    eat(ID, interpret);
-    eat(LPAREN, interpret);
+    if (!eat(ID, interpret))
+    {
+        printf("Syntax Error: Expected a function name after 'def'.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
+    if (!eat(LPAREN, interpret))
+    {
+        printf("Syntax Error: Expected '(' after function name.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
 
     // Parse parameter list
     char **parameter_name = NULL;
@@ -309,12 +324,11 @@ static ASTNode *parse_function(Interpreter *interpret)
             realloc(parameter_name, (parameter_count + 1) * sizeof(char *));
         parameter_name[parameter_count] = strdup(interpret->current_token.name);
         parameter_count++;
-        eat(ID, interpret);
+        eat(ID, interpret); // no need for eat check, because loop does it
 
         // Check if there is a comma after the parameter
-        if (interpret->current_token.type == COMMA)
+        if (eat(COMMA, interpret))
         {
-            eat(COMMA, interpret);
             if (interpret->current_token.type != ID)
             {
                 printf("Syntax Error: Expected parameter name after ','\n");
@@ -323,13 +337,29 @@ static ASTNode *parse_function(Interpreter *interpret)
             }
         }
     }
-    eat(RPAREN, interpret);
+    if (!eat(RPAREN, interpret))
+    {
+        printf("Syntax Error: Expected ')' after function parameters.\n");
+        set_error_state_interpret(interpret);
+        goto cleanup;
+    }
 
     // Parse the body
     skip_eol(interpret);
-    eat(LBRACE, interpret);
+    if (!eat(LBRACE, interpret))
+    {
+        printf(
+            "Syntax Error: Expected '{' for the start of a function body.\n");
+        set_error_state_interpret(interpret);
+        goto cleanup;
+    }
     ASTNode *left_node = parse_compound(interpret);
-    eat(RBRACE, interpret);
+    if (!eat(RBRACE, interpret))
+    {
+        printf("Syntax Error: Expected '}' for the end of a function body.\n");
+        set_error_state_interpret(interpret);
+        goto cleanup;
+    }
 
     return create_function_def_node(func_name, parameter_name, parameter_count,
                                     left_node);
@@ -346,25 +376,54 @@ cleanup:
 // Helper function to parse the if keyword
 static ASTNode *parse_if(Interpreter *interpret)
 {
-    eat(IF, interpret);
+    if (!eat(IF, interpret))
+    {
+        printf("Syntax Error: Expected keyword 'if'.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
 
     // The left node should be a boolean expression
     ASTNode *left_node = bitwise_or_expr(interpret);
     skip_eol(interpret);
-    eat(LBRACE, interpret);
+    if (!eat(LBRACE, interpret))
+    {
+        printf("Syntax Error: Expected '{' for the start of a if statement "
+               "body.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
     ASTNode *right_node = parse_compound(interpret);
-    eat(RBRACE, interpret);
+    if (!eat(RBRACE, interpret))
+    {
+        printf("Syntax Error: Expected '}' for the end of a if statement "
+               "body.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
+
     skip_eol(interpret);
     ASTNode *else_node = NULL;
 
-    if (interpret->current_token.type == ELSE)
+    if (eat(ELSE, interpret))
     {
-        eat(ELSE, interpret);
         skip_eol(interpret);
-        eat(LBRACE, interpret);
+        if (!eat(LBRACE, interpret))
+        {
+            printf("Syntax Error: Expected '{' for the start of a if statement "
+                   "body.\n");
+            set_error_state_interpret(interpret);
+            return NULL;
+        }
         else_node = parse_compound(interpret);
         skip_eol(interpret);
-        eat(RBRACE, interpret);
+        if (!eat(RBRACE, interpret))
+        {
+            printf("Syntax Error: Expected '}' for the end of a if statement "
+                   "body.\n");
+            set_error_state_interpret(interpret);
+            return NULL;
+        }
     }
     return create_if_node(left_node, right_node, else_node);
 }
@@ -372,14 +431,31 @@ static ASTNode *parse_if(Interpreter *interpret)
 // Helper function to parse the while keyword
 static ASTNode *parse_while(Interpreter *interpret)
 {
-    eat(WHILE, interpret);
+    if (!eat(WHILE, interpret))
+    {
+        printf("Syntax Error: Expected keyword 'while'.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
 
     // The left node should be a boolean expression
     ASTNode *left_node = bitwise_or_expr(interpret);
     skip_eol(interpret);
-    eat(LBRACE, interpret);
+    if (!eat(LBRACE, interpret))
+    {
+        printf("Syntax Error: Expected '{' for the start of a while loop "
+               "body.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
     ASTNode *right_node = parse_compound(interpret);
-    eat(RBRACE, interpret);
+    if (!eat(RBRACE, interpret))
+    {
+        printf("Syntax Error: Expected '}' for the end of a while loop "
+               "body.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
     skip_eol(interpret);
 
     return create_while_node(left_node, right_node);
@@ -388,7 +464,12 @@ static ASTNode *parse_while(Interpreter *interpret)
 // Helper function to parse the const keyword
 static ASTNode *parse_const(Interpreter *interpret)
 {
-    eat(CONST, interpret);
+    if (!eat(CONST, interpret))
+    {
+        printf("Syntax Error: Expected keyword 'const'.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
 
     Token id_token = interpret->current_token;
     if (!eat(ID, interpret))
@@ -417,10 +498,26 @@ static ASTNode *parse_const(Interpreter *interpret)
 // Helper function to parse the print keyword
 static ASTNode *parse_print(Interpreter *interpret)
 {
-    eat(PRINT, interpret);
-    eat(LPAREN, interpret);
+    if (!eat(PRINT, interpret))
+    {
+        printf("Syntax Error: Expected keyword 'print'.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
+    if (!eat(LPAREN, interpret))
+    {
+        printf("Syntax Error: Expected '(' after the 'print' keyword.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
     ASTNode *left_node = bitwise_or_expr(interpret);
-    eat(RPAREN, interpret);
+    if (!eat(RPAREN, interpret))
+    {
+        printf(
+            "Syntax Error: Expected ')' at the end of the 'print' keyword.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
     return create_print_node(left_node);
 }
 
@@ -698,7 +795,8 @@ static ASTNode *factor(Interpreter *interpret)
     }
     else
     {
-        printf("Syntax Error: Expected an Integer, an unary operator or '('\n");
+        printf("Syntax Error: Expected an Integer, an unary operator or "
+               "'('\n");
         set_error_state_interpret(interpret);
         return NULL;
     }
@@ -770,9 +868,9 @@ void get_next_token(Interpreter *interpret)
                 // Check for overflow errors
                 if (errno == ERANGE)
                 {
-                    printf(
-                        "Lexical Error: Number '%s' is too large to store!\n",
-                        temp_num);
+                    printf("Lexical Error: Number '%s' is too large to "
+                           "store!\n",
+                           temp_num);
                     set_error_state_interpret(interpret);
                     return;
                 }
@@ -810,9 +908,9 @@ void get_next_token(Interpreter *interpret)
                 // Check for overflow errors
                 if (errno == ERANGE)
                 {
-                    printf(
-                        "Lexical Error: Number '%s' is too large to store!\n",
-                        temp_num);
+                    printf("Lexical Error: Number '%s' is too large to "
+                           "store!\n",
+                           temp_num);
                     set_error_state_interpret(interpret);
                     return;
                 }
@@ -1191,8 +1289,8 @@ static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
 
         if (new_symbol == NULL)
         {
-            printf(
-                "Fatal Error: Failed to allocate memory for symbol table!\n");
+            printf("Fatal Error: Failed to allocate memory for symbol "
+                   "table!\n");
             set_error_state_symtab(symtab);
             return;
         }
@@ -1362,8 +1460,8 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     if (SAFE_ADD(left_val.as.i_val, right_val.as.i_val,
                                  &result.as.i_val))
                     {
-                        printf(
-                            "Runtime Error: Integer Overflow or Underflow\n");
+                        printf("Runtime Error: Integer Overflow or "
+                               "Underflow\n");
                         set_error_state_interpret(interpret);
                         return (Value){VAL_INT, {.i_val = 0}};
                     }
@@ -1375,8 +1473,8 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     if (SAFE_SUB(left_val.as.i_val, right_val.as.i_val,
                                  &result.as.i_val))
                     {
-                        printf(
-                            "Runtime Error: Integer Overflow or Underflow\n");
+                        printf("Runtime Error: Integer Overflow or "
+                               "Underflow\n");
                         set_error_state_interpret(interpret);
                         return (Value){VAL_INT, {.i_val = 0}};
                     }
@@ -1387,8 +1485,8 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                     if (SAFE_MUL(left_val.as.i_val, right_val.as.i_val,
                                  &result.as.i_val))
                     {
-                        printf(
-                            "Runtime Error: Integer Overflow or Underflow\n");
+                        printf("Runtime Error: Integer Overflow or "
+                               "Underflow\n");
                         set_error_state_interpret(interpret);
                         return (Value){VAL_INT, {.i_val = 0}};
                     }
@@ -1600,7 +1698,8 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                 }
                 else
                 {
-                    printf("Runtime Error: Cannot invert decimal number '%f'\n",
+                    printf("Runtime Error: Cannot invert decimal number "
+                           "'%f'\n",
                            expr_val.as.f_val);
                     set_error_state_interpret(interpret);
                     return (Value){VAL_INT, {.i_val = 0}};
@@ -1671,14 +1770,14 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
                 while (left_val.as.b_val && !interpret->error_found)
                 {
                     right_val = evaluate(node->right, interpret);
-                    // Reevaluating the statement every time and check if its
-                    // still a boolean
+                    // Reevaluating the statement every time and check if
+                    // its still a boolean
                     left_val = evaluate(node->left, interpret);
                     if (left_val.type != VAL_BOOL)
                     {
-                        printf(
-                            "Runtime Error: While-Statement requires a boolean "
-                            "expression.\n");
+                        printf("Runtime Error: While-Statement requires a "
+                               "boolean "
+                               "expression.\n");
                         interpret->error_found = true;
                         break;
                     }
