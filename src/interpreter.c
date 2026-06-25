@@ -47,8 +47,11 @@ static ASTNode *factor(Interpreter *interpret);
 static TokenType get_keyword_type(const char *name);
 
 // Symbol table function prototypes
-static bool lookup_symbol(SymbolTable *symtab, const char *name);
 static void define_symbol(SymbolTable *symtab, const char *name, bool is_const);
+static void define_function(SymbolTable *symtab, const char *name,
+                            int param_count, char **parameters, ASTNode *body);
+static bool grow_symtab(SymbolTable *symtab);
+static bool lookup_symbol(SymbolTable *symtab, const char *name);
 static void init_builtin_symbols(SymbolTable *symtab);
 
 // Interpreter function prototypes
@@ -266,7 +269,74 @@ void free_ast(ASTNode *node)
         return;
     free_ast(node->left); // Free children first (Post-order traversal)
     free_ast(node->right);
+
+    switch (node->type)
+    {
+        case NODE_FUNC_DEF:
+            free(node->ext.func_def.name);
+            for (int i = 0; i < node->ext.func_def.param_count; i++)
+            {
+                free(node->ext.func_def.params[i]);
+            }
+            free(node->ext.func_def.params);
+            break;
+        case NODE_FUNC_CALL:
+            free(node->ext.func_call.name);
+
+            for (int i = 0; i < node->ext.func_call.arg_count; i++)
+            {
+                free_ast(node->ext.func_call
+                             .args[i]); // args is an array of ast nodes
+            }
+            free(node->ext.func_call.args);
+            break;
+        default:
+            break;
+    }
     free(node); // Then free the parent
+}
+
+// Clone a ast node to another memory slot
+ASTNode *clone_ast(ASTNode *node)
+{
+    ASTNode *copied_node = (ASTNode *)malloc(sizeof(ASTNode));
+    *copied_node = *node;
+    copied_node->left = clone_ast(node->left);
+    copied_node->right = clone_ast(node->right);
+
+    // Copy the ext stuff in a node, but only if it is used in the union
+    switch (node->type)
+    {
+        case NODE_FUNC_DEF:
+            copied_node->ext.func_def.name = strdup(node->ext.func_def.name);
+            copied_node->ext.func_def.param_count =
+                node->ext.func_def.param_count;
+            copied_node->ext.func_def.params =
+                malloc(node->ext.func_def.param_count * sizeof(char *));
+
+            for (int i = 0; i < node->ext.func_def.param_count; i++)
+            {
+                copied_node->ext.func_def.params[i] =
+                    strdup(node->ext.func_def.params[i]);
+            }
+            break;
+        case NODE_FUNC_CALL:
+            copied_node->ext.func_call.name = strdup(node->ext.func_call.name);
+            copied_node->ext.func_call.arg_count =
+                node->ext.func_call.arg_count;
+            copied_node->ext.func_call.args =
+                malloc(node->ext.func_call.arg_count * sizeof(ASTNode *));
+
+            for (int i = 0; i < node->ext.func_call.arg_count; i++)
+            {
+                copied_node->ext.func_call.args[i] =
+                    clone_ast(node->ext.func_call.args[i]);
+            }
+            break;
+        default:
+            break;
+    }
+    return copied_node;
 }
 
 // Eat the provided token
@@ -370,20 +440,9 @@ cleanup:
 }
 
 // Helper function to parse a function call
-static ASTNode *parse_function_call(Interpreter *interpret)
+static ASTNode *parse_function_call(char *id_name, Interpreter *interpret)
 {
-    char *func_name = NULL;
-    if (interpret->current_token.type == ID)
-    {
-        func_name = strdup(interpret->current_token.name);
-        eat(ID, interpret);
-    }
-    else
-    {
-        printf("Syntax Error: Expected a function name.\n");
-        set_error_state_interpret(interpret);
-        return NULL;
-    }
+    char *func_name = strdup(id_name);
     if (!eat(LPAREN, interpret))
     {
         printf(
@@ -612,6 +671,7 @@ ASTNode *statement(Interpreter *interpret)
         free_ast(left_node);
         return NULL;
     }
+    // Parse the assigment operators
     if (is_assign_op(interpret->current_token.type))
     {
         if (left_node->type != NODE_VAR)
@@ -635,6 +695,14 @@ ASTNode *statement(Interpreter *interpret)
         return create_assign_node(left_node, token, right_node);
     }
 
+    // Check if its a function call
+    if (interpret->current_token.type == LPAREN)
+    {
+        ASTNode *right_node =
+            parse_function_call(left_node->token.name, interpret);
+        free(left_node); // free left_node, because it wont get stored anywhere
+        return right_node;
+    }
     // No assigment was used, just return the node from expr
     return left_node;
 }
@@ -1339,6 +1407,73 @@ static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
             return;
         }
     }
+    // Check if the symol table need to grow
+    if (!grow_symtab(symtab))
+    {
+        return;
+    }
+
+    unsigned int index = symtab->count;
+
+    if (strlen(name) < NAME_LENGTH)
+    {
+        strcpy(symtab->symbols[index].name, name);
+        symtab->symbols[index].is_const = is_const;
+        symtab->symbols[index].symbol_kind = KIND_VAR;
+        memset(&symtab->symbols[index].ext, 0,
+               sizeof(symtab->symbols[index].ext));
+        symtab->count++;
+    }
+    else
+    {
+        printf("Semantic Error: Name of variable too long!\n ");
+        set_error_state_symtab(symtab);
+    }
+}
+
+// Put a new function in the table if it does not exist or is not const
+static void define_function(SymbolTable *symtab, const char *name,
+                            int param_count, char **parameters, ASTNode *body)
+{
+    // Check if the syymbol already exists
+    for (unsigned int i = 0; i < symtab->count; i++)
+    {
+        if (strcmp(name, symtab->symbols[i].name) == 0)
+        {
+            if (symtab->symbols[i].is_const)
+            {
+                printf("Semantic Error: Cannot reassign constant '%s'\n", name);
+                set_error_state_symtab(symtab);
+            }
+
+            return;
+        }
+    }
+    // Check if the symol table need to grow
+    if (!grow_symtab(symtab))
+    {
+        return;
+    }
+
+    unsigned int index = symtab->count;
+
+    if (strlen(name) < NAME_LENGTH)
+    {
+        strcpy(symtab->symbols[index].name, name);
+        symtab->symbols[index].symbol_kind = KIND_FUNC;
+        symtab->symbols[index].ext.func.params; // TODO: after clone_AST
+        symtab->count++;
+    }
+    else
+    {
+        printf("Semantic Error: Name of variable too long!\n ");
+        set_error_state_symtab(symtab);
+    }
+}
+
+// grow the Symbol Table, return true if successfull, false if not
+static bool grow_symtab(SymbolTable *symtab)
+{
     if (symtab->count >= symtab->capacity)
     {
         // realloc with 0 is equal to free, what shouldn't happen here
@@ -1356,23 +1491,11 @@ static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
             printf("Fatal Error: Failed to allocate memory for symbol "
                    "table!\n");
             set_error_state_symtab(symtab);
-            return;
+            return false;
         }
         symtab->symbols = new_symbol;
     }
-    unsigned int index = symtab->count;
-
-    if (strlen(name) < NAME_LENGTH)
-    {
-        strcpy(symtab->symbols[index].name, name);
-        symtab->symbols[index].is_const = is_const;
-        symtab->count++;
-    }
-    else
-    {
-        printf("Semantic Error: Name of variable too long!\n ");
-        set_error_state_symtab(symtab);
-    }
+    return true;
 }
 
 // Check if a symbol is in the symbol table

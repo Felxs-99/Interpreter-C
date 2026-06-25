@@ -77,44 +77,6 @@ typedef struct
     TokenType type;
 } Token;
 
-// Represents a declared variable
-typedef struct
-{
-    char name[NAME_LENGTH];
-    bool is_const;
-} Symbol;
-
-// The Semantic Analyzer's memory, aka symbol table
-typedef struct SymbolTable
-{
-    Symbol *symbols;
-    unsigned int count;
-    unsigned int capacity;
-    bool error_found;
-    struct SymbolTable *enclosing_scope;
-} SymbolTable;
-
-// Represents a runtime value in memory
-typedef struct
-{
-    char name[NAME_LENGTH];
-    Value value;
-} MemorySlot;
-
-// Run-time evaluator
-typedef struct
-{
-    char *buffer;
-    size_t length;
-    size_t position;
-    Token current_token;
-    bool error_found;
-
-    MemorySlot *memory;
-    unsigned int mem_count;
-    unsigned int mem_capacity;
-} Interpreter;
-
 // Ast node types
 typedef enum
 {
@@ -156,6 +118,60 @@ typedef struct ASTNode
         } func_call;
     } ext;
 } ASTNode;
+
+typedef enum
+{
+    KIND_VAR,
+    KIND_FUNC,
+} SymbolKind;
+
+// Represents a declared variable or function
+typedef struct
+{
+    char name[NAME_LENGTH];
+    bool is_const;
+    SymbolKind symbol_kind;
+    union
+    {
+        struct
+        {
+            int params_count;
+            char **params;
+            ASTNode *body;
+        } func;
+    } ext;
+} Symbol;
+
+// The Semantic Analyzer's memory, aka symbol table
+typedef struct SymbolTable
+{
+    Symbol *symbols;
+    unsigned int count;
+    unsigned int capacity;
+    bool error_found;
+    struct SymbolTable *enclosing_scope;
+} SymbolTable;
+
+// Represents a runtime value in memory
+typedef struct
+{
+    char name[NAME_LENGTH];
+    Value value;
+} MemorySlot;
+
+// Run-time evaluator
+typedef struct
+{
+    char *buffer;
+    size_t length;
+    size_t position;
+    Token current_token;
+    bool error_found;
+
+    MemorySlot *memory;
+    unsigned int mem_count;
+    unsigned int mem_capacity;
+} Interpreter;
 
 // Statement function
 ASTNode *statement(Interpreter *interpret);
