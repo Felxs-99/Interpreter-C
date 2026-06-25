@@ -28,6 +28,7 @@ static ASTNode *create_function_call_node(char *function_name,
                                           int arguments_count);
 static ASTNode *create_print_node(ASTNode *expr);
 
+static ASTNode *clone_ast(ASTNode *node);
 static bool eat(TokenType token, Interpreter *interprete);
 static ASTNode *parse_function_def(Interpreter *interpret);
 static ASTNode *parse_if(Interpreter *interpret);
@@ -52,9 +53,13 @@ static void define_function(SymbolTable *symtab, const char *name,
                             int param_count, char **parameters, ASTNode *body);
 static bool grow_symtab(SymbolTable *symtab);
 static bool lookup_symbol(SymbolTable *symtab, const char *name);
+static bool lookup_function(SymbolTable *symtab, const char *name,
+                            int arguments_count);
 static void init_builtin_symbols(SymbolTable *symtab);
 
 // Interpreter function prototypes
+static Value evaluate_binop(ASTNode *node, Interpreter *interpret);
+static Value evaluate_unaop(ASTNode *node, Interpreter *interpret);
 static void set_variable(Interpreter *interpret, const char *name, Value value);
 static Value get_variable(Interpreter *interpret, const char *name);
 void set_math_const(Interpreter *interpret);
@@ -297,8 +302,12 @@ void free_ast(ASTNode *node)
 }
 
 // Clone a ast node to another memory slot
-ASTNode *clone_ast(ASTNode *node)
+static ASTNode *clone_ast(ASTNode *node)
 {
+    if (node == NULL)
+    {
+        return NULL;
+    }
     ASTNode *copied_node = (ASTNode *)malloc(sizeof(ASTNode));
     *copied_node = *node;
     copied_node->left = clone_ast(node->left);
@@ -1375,6 +1384,21 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
             analyze_tree(node->left, symtab);
             analyze_tree(node->right, symtab);
             break;
+        case NODE_FUNC_DEF:
+            define_function(symtab, node->ext.func_def.name,
+                            node->ext.func_def.param_count,
+                            node->ext.func_def.params, node->left);
+            break;
+        case NODE_FUNC_CALL:
+            lookup_function(symtab, node->ext.func_call.name,
+                            node->ext.func_call.arg_count);
+            // Check everything in the arguments list
+            for (int i = 0; i < node->ext.func_call.arg_count; i++)
+            {
+                analyze_tree(node->ext.func_call.args[i], symtab);
+            }
+            break;
+
         case NODE_PRINT:
             analyze_tree(node->left, symtab);
         default:
@@ -1442,8 +1466,18 @@ static void define_function(SymbolTable *symtab, const char *name,
         {
             if (symtab->symbols[i].is_const)
             {
-                printf("Semantic Error: Cannot reassign constant '%s'\n", name);
-                set_error_state_symtab(symtab);
+                if (symtab->symbols[i].symbol_kind != KIND_FUNC)
+                {
+                    printf("Semantic Error: '%s' is not a function!\n", name);
+                    set_error_state_symtab(symtab);
+                }
+                else
+                {
+                    printf(
+                        "Semantic Error: Cannot reassign function name! '%s'\n",
+                        name);
+                    set_error_state_symtab(symtab);
+                }
             }
 
             return;
@@ -1461,7 +1495,15 @@ static void define_function(SymbolTable *symtab, const char *name,
     {
         strcpy(symtab->symbols[index].name, name);
         symtab->symbols[index].symbol_kind = KIND_FUNC;
-        symtab->symbols[index].ext.func.params; // TODO: after clone_AST
+        symtab->symbols[index].ext.func.params =
+            malloc(param_count * sizeof(char *));
+        for (int i = 0; i < param_count; i++)
+        {
+            symtab->symbols[index].ext.func.params[i] = strdup(parameters[i]);
+        }
+        symtab->symbols[index].ext.func.params_count = param_count;
+        symtab->symbols[index].ext.func.body = clone_ast(body);
+        symtab->symbols[index].is_const = true;
         symtab->count++;
     }
     else
@@ -1524,6 +1566,52 @@ static bool lookup_symbol(SymbolTable *symtab, const char *name)
     return false;
 }
 
+// Check if a symbol is in the symbol table
+static bool lookup_function(SymbolTable *symtab, const char *name,
+                            int arguments_count)
+{
+    for (unsigned int i = 0; i < symtab->count; i++)
+    {
+        if (strcmp(name, symtab->symbols[i].name) == 0)
+        {
+            Symbol function = symtab->symbols[i];
+
+            if (function.symbol_kind != KIND_FUNC)
+            {
+                printf("Semantic Error: Function '%s' is not a function!\n",
+                       name);
+                symtab->error_found = true;
+                return false;
+            }
+
+            if (function.ext.func.params_count != arguments_count)
+            {
+                printf("Semantic Error: Function '%s' expects %d arguments but "
+                       "got %d!\n",
+                       name, function.ext.func.params_count, arguments_count);
+                symtab->error_found = true;
+                return false;
+            }
+            return true;
+        }
+    }
+    // Try to find the variable in the parent scope
+    if (symtab->enclosing_scope != NULL)
+    {
+        bool is_found =
+            lookup_function(symtab->enclosing_scope, name, arguments_count);
+        if (!is_found)
+        {
+            symtab->error_found = true;
+        }
+        return is_found;
+    }
+
+    printf("Semantic Error: Function '%s' is not defined!\n", name);
+    symtab->error_found = true;
+    return false;
+}
+
 // Init the symbol table
 void init_symtab(SymbolTable *symtab)
 {
@@ -1580,319 +1668,12 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
 
         case NODE_BINOP:
         {
-            Value left_val = evaluate(node->left, interpret);
-            Value right_val = evaluate(node->right, interpret);
-
-            if (interpret->error_found)
-            {
-                return (Value){VAL_INT, {.i_val = 0}};
-            }
-
-            Token op = node->token;
-            if (left_val.type == VAL_BOOL && right_val.type == VAL_BOOL)
-            {
-                if (op.type == BIT_OR)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.b_val || right_val.as.b_val)}};
-                }
-                else if (op.type == BIT_XOR)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.b_val != right_val.as.b_val)}};
-                }
-                else if (op.type == BIT_AND)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.b_val && right_val.as.b_val)}};
-                }
-                else if (op.type == EQUAL)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.b_val == right_val.as.b_val)}};
-                }
-                else if (op.type == NOT_EQUAL)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.b_val != right_val.as.b_val)}};
-                }
-                else
-                {
-                    printf("Runtime Error: Cannot perform arithmetic "
-                           "operations on "
-                           "booleans.\n");
-                    interpret->error_found = true;
-                    return (Value){VAL_INT, {.i_val = 0}};
-                }
-            }
-            else if (left_val.type == VAL_BOOL || right_val.type == VAL_BOOL)
-            {
-                printf("Runtime Error: Cannot perform arithmetic "
-                       "operations on "
-                       "booleans.\n");
-                interpret->error_found = true;
-                return (Value){VAL_INT, {.i_val = 0}};
-            }
-
-            if (left_val.type == VAL_INT && right_val.type == VAL_INT)
-            {
-                Value result = {VAL_INT, {.i_val = 0}};
-                if (op.type == PLUS)
-                {
-                    if (SAFE_ADD(left_val.as.i_val, right_val.as.i_val,
-                                 &result.as.i_val))
-                    {
-                        printf("Runtime Error: Integer Overflow or "
-                               "Underflow\n");
-                        set_error_state_interpret(interpret);
-                        return (Value){VAL_INT, {.i_val = 0}};
-                    }
-
-                    return result;
-                }
-                else if (op.type == MINUS)
-                {
-                    if (SAFE_SUB(left_val.as.i_val, right_val.as.i_val,
-                                 &result.as.i_val))
-                    {
-                        printf("Runtime Error: Integer Overflow or "
-                               "Underflow\n");
-                        set_error_state_interpret(interpret);
-                        return (Value){VAL_INT, {.i_val = 0}};
-                    }
-                    return result;
-                }
-                else if (op.type == MUL)
-                {
-                    if (SAFE_MUL(left_val.as.i_val, right_val.as.i_val,
-                                 &result.as.i_val))
-                    {
-                        printf("Runtime Error: Integer Overflow or "
-                               "Underflow\n");
-                        set_error_state_interpret(interpret);
-                        return (Value){VAL_INT, {.i_val = 0}};
-                    }
-                    return result;
-                }
-                else if (op.type == DIV)
-                {
-                    // The Division-by-Zero check returns!
-                    if (right_val.as.i_val == 0)
-                    {
-                        printf("Runtime Error: Division by zero\n");
-                        set_error_state_interpret(interpret);
-                        return (Value){VAL_INT, {.i_val = 0}};
-                    }
-
-                    if (left_val.as.i_val == INT_MIN &&
-                        right_val.as.i_val == -1)
-                    {
-                        printf("Runtime Error: Integer Overflow\n");
-                        set_error_state_interpret(interpret);
-                        return (Value){VAL_INT, {.i_val = 0}};
-                    }
-                    double l_num = (double)left_val.as.i_val;
-                    double r_num = (double)right_val.as.i_val;
-                    return (Value){VAL_FLOAT, {.f_val = l_num / r_num}};
-                }
-                else if (op.type == BIT_OR)
-                {
-                    return (Value){
-                        VAL_INT,
-                        {.i_val = left_val.as.i_val | right_val.as.i_val}};
-                }
-                else if (op.type == BIT_XOR)
-                {
-                    return (Value){
-                        VAL_INT,
-                        {.i_val = left_val.as.i_val ^ right_val.as.i_val}};
-                }
-                else if (op.type == BIT_AND)
-                {
-                    return (Value){
-                        VAL_INT,
-                        {.i_val = left_val.as.i_val & right_val.as.i_val}};
-                }
-                else if (op.type == EQUAL)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.i_val == right_val.as.i_val)}};
-                }
-                else if (op.type == NOT_EQUAL)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.i_val != right_val.as.i_val)}};
-                }
-                else if (op.type == LESS)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.i_val < right_val.as.i_val)}};
-                }
-                else if (op.type == EQUAL_LESS)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.i_val <= right_val.as.i_val)}};
-                }
-                else if (op.type == GREATER)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.i_val > right_val.as.i_val)}};
-                }
-                else if (op.type == EQUAL_GREATER)
-                {
-                    return (Value){
-                        VAL_BOOL,
-                        {.b_val = (left_val.as.i_val >= right_val.as.i_val)}};
-                }
-                else
-                {
-                    printf("Runtime Error: Unknown operator\n");
-                    set_error_state_interpret(interpret);
-                    return (Value){VAL_INT, {.i_val = 0}};
-                }
-            }
-            else
-            {
-                // If one is an INT, cast it to a double!
-                double l_num = (left_val.type == VAL_FLOAT)
-                                   ? left_val.as.f_val
-                                   : (double)left_val.as.i_val;
-                double r_num = (right_val.type == VAL_FLOAT)
-                                   ? right_val.as.f_val
-                                   : (double)right_val.as.i_val;
-
-                Value result = {VAL_FLOAT, {.f_val = 0.0}};
-
-                if (node->token.type == PLUS)
-                {
-                    result.as.f_val = l_num + r_num;
-                    return result;
-                }
-                else if (node->token.type == MINUS)
-                {
-                    result.as.f_val = l_num - r_num;
-                    return result;
-                }
-                else if (node->token.type == MUL)
-                {
-                    result.as.f_val = l_num * r_num;
-                    return result;
-                }
-                else if (node->token.type == DIV)
-                {
-                    if (r_num == 0.0)
-                    {
-                        printf("Runtime Error: Division by zero\n");
-                        interpret->error_found = true;
-                        return (Value){VAL_INT, {.i_val = 0}};
-                    }
-                    result.as.f_val = l_num / r_num;
-                    return result;
-                }
-                else if (op.type == EQUAL)
-                {
-                    return (Value){VAL_BOOL, {.b_val = (l_num == r_num)}};
-                }
-                else if (op.type == NOT_EQUAL)
-                {
-                    return (Value){VAL_BOOL, {.b_val = (l_num != r_num)}};
-                }
-                else if (op.type == LESS)
-                {
-                    return (Value){VAL_BOOL, {.b_val = (l_num < r_num)}};
-                }
-                else if (op.type == EQUAL_LESS)
-                {
-                    return (Value){VAL_BOOL, {.b_val = (l_num <= r_num)}};
-                }
-                else if (op.type == GREATER)
-                {
-                    return (Value){VAL_BOOL, {.b_val = (l_num > r_num)}};
-                }
-                else if (op.type == EQUAL_GREATER)
-                {
-                    return (Value){VAL_BOOL, {.b_val = (l_num >= r_num)}};
-                }
-                else
-                {
-                    printf("Runtime Error: Unallowed operator\n");
-                    set_error_state_interpret(interpret);
-                    return (Value){VAL_INT, {.i_val = 0}};
-                }
-            }
-
-            return (Value){VAL_INT, {.i_val = 0}};
+            return evaluate_binop(node, interpret);
         }
 
         case NODE_UNAOP:
         {
-            Value expr_val = evaluate(node->right, interpret);
-            if (interpret->error_found)
-                return (Value){VAL_INT, {.i_val = 0}};
-
-            if (node->token.type == PLUS)
-            {
-                return expr_val;
-            }
-            if (expr_val.type == VAL_BOOL)
-            {
-                if (node->token.type == BIT_NOT)
-                {
-                    return (Value){VAL_BOOL, {.b_val = !expr_val.as.b_val}};
-                }
-                else
-                {
-                    printf("Runtime Error: Cannot perform arithmetic "
-                           "operations on "
-                           "booleans.\n");
-                    interpret->error_found = true;
-                    return (Value){VAL_INT, {.i_val = 0}};
-                }
-            }
-            else if (node->token.type == MINUS)
-            {
-                if (expr_val.type == VAL_INT)
-                {
-
-                    if (expr_val.as.i_val == (INT_MIN))
-                    {
-                        printf("Runtime Error: Integer Overflow\n");
-                        set_error_state_interpret(interpret);
-                        return (Value){VAL_INT, {.i_val = 0}};
-                    }
-                    return (Value){VAL_INT, {.i_val = -expr_val.as.i_val}};
-                }
-                else if (expr_val.type == VAL_FLOAT)
-                {
-                    return (Value){VAL_FLOAT, {.f_val = -expr_val.as.f_val}};
-                }
-            }
-            else if (node->token.type == BIT_NOT)
-            {
-                if (expr_val.type == VAL_INT)
-                {
-                    return (Value){VAL_INT, {.i_val = ~expr_val.as.i_val}};
-                }
-                else
-                {
-                    printf("Runtime Error: Cannot invert decimal number "
-                           "'%f'\n",
-                           expr_val.as.f_val);
-                    set_error_state_interpret(interpret);
-                    return (Value){VAL_INT, {.i_val = 0}};
-                }
-            }
-            return (Value){VAL_INT, {.i_val = 0}};
+            return evaluate_unaop(node, interpret);
         }
         case NODE_CONST_ASSIGN:
         case NODE_ASSIGN:
@@ -1981,6 +1762,15 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
 
             return right_val;
         }
+        case NODE_FUNC_DEF:
+        { // Work already done in symnbol table -> return 0
+            return (Value){VAL_INT, {.i_val = 0}};
+            break;
+        }
+        case NODE_FUNC_CALL:
+        {
+            return evaluate_function_call(node, interpret);
+        }
         case NODE_PRINT:
         {
             Value expr = evaluate(node->left, interpret);
@@ -2007,6 +1797,312 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
     }
     return (Value){VAL_INT, {.i_val = 0}};
 }
+
+// Evaluate binary operators
+static Value evaluate_binop(ASTNode *node, Interpreter *interpret)
+{
+    Value left_val = evaluate(node->left, interpret);
+    Value right_val = evaluate(node->right, interpret);
+
+    if (interpret->error_found)
+    {
+        return (Value){VAL_INT, {.i_val = 0}};
+    }
+
+    Token op = node->token;
+    if (left_val.type == VAL_BOOL && right_val.type == VAL_BOOL)
+    {
+        if (op.type == BIT_OR)
+        {
+            return (Value){
+                VAL_BOOL, {.b_val = (left_val.as.b_val || right_val.as.b_val)}};
+        }
+        else if (op.type == BIT_XOR)
+        {
+            return (Value){
+                VAL_BOOL, {.b_val = (left_val.as.b_val != right_val.as.b_val)}};
+        }
+        else if (op.type == BIT_AND)
+        {
+            return (Value){
+                VAL_BOOL, {.b_val = (left_val.as.b_val && right_val.as.b_val)}};
+        }
+        else if (op.type == EQUAL)
+        {
+            return (Value){
+                VAL_BOOL, {.b_val = (left_val.as.b_val == right_val.as.b_val)}};
+        }
+        else if (op.type == NOT_EQUAL)
+        {
+            return (Value){
+                VAL_BOOL, {.b_val = (left_val.as.b_val != right_val.as.b_val)}};
+        }
+        else
+        {
+            printf("Runtime Error: Cannot perform arithmetic "
+                   "operations on "
+                   "booleans.\n");
+            interpret->error_found = true;
+            return (Value){VAL_INT, {.i_val = 0}};
+        }
+    }
+    else if (left_val.type == VAL_BOOL || right_val.type == VAL_BOOL)
+    {
+        printf("Runtime Error: Cannot perform arithmetic "
+               "operations on "
+               "booleans.\n");
+        interpret->error_found = true;
+        return (Value){VAL_INT, {.i_val = 0}};
+    }
+
+    if (left_val.type == VAL_INT && right_val.type == VAL_INT)
+    {
+        Value result = {VAL_INT, {.i_val = 0}};
+        if (op.type == PLUS)
+        {
+            if (SAFE_ADD(left_val.as.i_val, right_val.as.i_val,
+                         &result.as.i_val))
+            {
+                printf("Runtime Error: Integer Overflow or "
+                       "Underflow\n");
+                set_error_state_interpret(interpret);
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
+
+            return result;
+        }
+        else if (op.type == MINUS)
+        {
+            if (SAFE_SUB(left_val.as.i_val, right_val.as.i_val,
+                         &result.as.i_val))
+            {
+                printf("Runtime Error: Integer Overflow or "
+                       "Underflow\n");
+                set_error_state_interpret(interpret);
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
+            return result;
+        }
+        else if (op.type == MUL)
+        {
+            if (SAFE_MUL(left_val.as.i_val, right_val.as.i_val,
+                         &result.as.i_val))
+            {
+                printf("Runtime Error: Integer Overflow or "
+                       "Underflow\n");
+                set_error_state_interpret(interpret);
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
+            return result;
+        }
+        else if (op.type == DIV)
+        {
+            // The Division-by-Zero check returns!
+            if (right_val.as.i_val == 0)
+            {
+                printf("Runtime Error: Division by zero\n");
+                set_error_state_interpret(interpret);
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
+
+            if (left_val.as.i_val == INT_MIN && right_val.as.i_val == -1)
+            {
+                printf("Runtime Error: Integer Overflow\n");
+                set_error_state_interpret(interpret);
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
+            double l_num = (double)left_val.as.i_val;
+            double r_num = (double)right_val.as.i_val;
+            return (Value){VAL_FLOAT, {.f_val = l_num / r_num}};
+        }
+        else if (op.type == BIT_OR)
+        {
+            return (Value){VAL_INT,
+                           {.i_val = left_val.as.i_val | right_val.as.i_val}};
+        }
+        else if (op.type == BIT_XOR)
+        {
+            return (Value){VAL_INT,
+                           {.i_val = left_val.as.i_val ^ right_val.as.i_val}};
+        }
+        else if (op.type == BIT_AND)
+        {
+            return (Value){VAL_INT,
+                           {.i_val = left_val.as.i_val & right_val.as.i_val}};
+        }
+        else if (op.type == EQUAL)
+        {
+            return (Value){
+                VAL_BOOL, {.b_val = (left_val.as.i_val == right_val.as.i_val)}};
+        }
+        else if (op.type == NOT_EQUAL)
+        {
+            return (Value){
+                VAL_BOOL, {.b_val = (left_val.as.i_val != right_val.as.i_val)}};
+        }
+        else if (op.type == LESS)
+        {
+            return (Value){VAL_BOOL,
+                           {.b_val = (left_val.as.i_val < right_val.as.i_val)}};
+        }
+        else if (op.type == EQUAL_LESS)
+        {
+            return (Value){
+                VAL_BOOL, {.b_val = (left_val.as.i_val <= right_val.as.i_val)}};
+        }
+        else if (op.type == GREATER)
+        {
+            return (Value){VAL_BOOL,
+                           {.b_val = (left_val.as.i_val > right_val.as.i_val)}};
+        }
+        else if (op.type == EQUAL_GREATER)
+        {
+            return (Value){
+                VAL_BOOL, {.b_val = (left_val.as.i_val >= right_val.as.i_val)}};
+        }
+        else
+        {
+            printf("Runtime Error: Unknown operator\n");
+            set_error_state_interpret(interpret);
+            return (Value){VAL_INT, {.i_val = 0}};
+        }
+    }
+    else
+    {
+        // If one is an INT, cast it to a double!
+        double l_num = (left_val.type == VAL_FLOAT) ? left_val.as.f_val
+                                                    : (double)left_val.as.i_val;
+        double r_num = (right_val.type == VAL_FLOAT)
+                           ? right_val.as.f_val
+                           : (double)right_val.as.i_val;
+
+        Value result = {VAL_FLOAT, {.f_val = 0.0}};
+
+        if (node->token.type == PLUS)
+        {
+            result.as.f_val = l_num + r_num;
+            return result;
+        }
+        else if (node->token.type == MINUS)
+        {
+            result.as.f_val = l_num - r_num;
+            return result;
+        }
+        else if (node->token.type == MUL)
+        {
+            result.as.f_val = l_num * r_num;
+            return result;
+        }
+        else if (node->token.type == DIV)
+        {
+            if (r_num == 0.0)
+            {
+                printf("Runtime Error: Division by zero\n");
+                interpret->error_found = true;
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
+            result.as.f_val = l_num / r_num;
+            return result;
+        }
+        else if (op.type == EQUAL)
+        {
+            return (Value){VAL_BOOL, {.b_val = (l_num == r_num)}};
+        }
+        else if (op.type == NOT_EQUAL)
+        {
+            return (Value){VAL_BOOL, {.b_val = (l_num != r_num)}};
+        }
+        else if (op.type == LESS)
+        {
+            return (Value){VAL_BOOL, {.b_val = (l_num < r_num)}};
+        }
+        else if (op.type == EQUAL_LESS)
+        {
+            return (Value){VAL_BOOL, {.b_val = (l_num <= r_num)}};
+        }
+        else if (op.type == GREATER)
+        {
+            return (Value){VAL_BOOL, {.b_val = (l_num > r_num)}};
+        }
+        else if (op.type == EQUAL_GREATER)
+        {
+            return (Value){VAL_BOOL, {.b_val = (l_num >= r_num)}};
+        }
+        else
+        {
+            printf("Runtime Error: Unallowed operator\n");
+            set_error_state_interpret(interpret);
+            return (Value){VAL_INT, {.i_val = 0}};
+        }
+    }
+
+    return (Value){VAL_INT, {.i_val = 0}};
+}
+
+// Evaluate unary operators
+static Value evaluate_unaop(ASTNode *node, Interpreter *interpret)
+{
+    Value expr_val = evaluate(node->right, interpret);
+    if (interpret->error_found)
+        return (Value){VAL_INT, {.i_val = 0}};
+
+    if (node->token.type == PLUS)
+    {
+        return expr_val;
+    }
+    if (expr_val.type == VAL_BOOL)
+    {
+        if (node->token.type == BIT_NOT)
+        {
+            return (Value){VAL_BOOL, {.b_val = !expr_val.as.b_val}};
+        }
+        else
+        {
+            printf("Runtime Error: Cannot perform arithmetic "
+                   "operations on "
+                   "booleans.\n");
+            interpret->error_found = true;
+            return (Value){VAL_INT, {.i_val = 0}};
+        }
+    }
+    else if (node->token.type == MINUS)
+    {
+        if (expr_val.type == VAL_INT)
+        {
+
+            if (expr_val.as.i_val == (INT_MIN))
+            {
+                printf("Runtime Error: Integer Overflow\n");
+                set_error_state_interpret(interpret);
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
+            return (Value){VAL_INT, {.i_val = -expr_val.as.i_val}};
+        }
+        else if (expr_val.type == VAL_FLOAT)
+        {
+            return (Value){VAL_FLOAT, {.f_val = -expr_val.as.f_val}};
+        }
+    }
+    else if (node->token.type == BIT_NOT)
+    {
+        if (expr_val.type == VAL_INT)
+        {
+            return (Value){VAL_INT, {.i_val = ~expr_val.as.i_val}};
+        }
+        else
+        {
+            printf("Runtime Error: Cannot invert decimal number "
+                   "'%f'\n",
+                   expr_val.as.f_val);
+            set_error_state_interpret(interpret);
+            return (Value){VAL_INT, {.i_val = 0}};
+        }
+    }
+    return (Value){VAL_INT, {.i_val = 0}};
+}
+
+// TODO: Evaluate function calls
+// static Value evaluate_function_call(ASTNode *node, Interpreter *interpret) {}
 
 // Initialize the interpreter struct
 void init_interpreter(Interpreter *interpret)
