@@ -23,13 +23,13 @@ static ASTNode *create_compound_node(ASTNode *statement, ASTNode *next);
 static ASTNode *create_while_node(ASTNode *condition, ASTNode *body);
 static ASTNode *create_function_def_node(char *function_name, char **parameter,
                                          int parameter_count, ASTNode *body);
-static ASTNode *create_function_def_call(char *function_name,
-                                         ASTNode **arguments,
-                                         int arguments_count);
+static ASTNode *create_function_call_node(char *function_name,
+                                          ASTNode **arguments,
+                                          int arguments_count);
 static ASTNode *create_print_node(ASTNode *expr);
 
 static bool eat(TokenType token, Interpreter *interprete);
-static ASTNode *parse_function(Interpreter *interpret);
+static ASTNode *parse_function_def(Interpreter *interpret);
 static ASTNode *parse_if(Interpreter *interpret);
 static ASTNode *parse_while(Interpreter *interpret);
 static ASTNode *parse_const(Interpreter *interpret);
@@ -232,9 +232,9 @@ static ASTNode *create_function_def_node(char *function_name, char **parameter,
 }
 
 // Ast node for function call
-static ASTNode *create_function_def_call(char *function_name,
-                                         ASTNode **arguments,
-                                         int arguments_count)
+static ASTNode *create_function_call_node(char *function_name,
+                                          ASTNode **arguments,
+                                          int arguments_count)
 {
     ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
     node->type = NODE_FUNC_CALL;
@@ -281,7 +281,7 @@ static bool eat(TokenType token, Interpreter *interpret)
 }
 
 // Helper function to parse the function keyword
-static ASTNode *parse_function(Interpreter *interpret)
+static ASTNode *parse_function_def(Interpreter *interpret)
 {
     if (!eat(FUNCTION, interpret))
     {
@@ -295,6 +295,7 @@ static ASTNode *parse_function(Interpreter *interpret)
     if (interpret->current_token.type == ID)
     {
         func_name = strdup(interpret->current_token.name);
+        eat(ID, interpret);
     }
     else
     {
@@ -302,12 +303,7 @@ static ASTNode *parse_function(Interpreter *interpret)
         set_error_state_interpret(interpret);
         return NULL;
     }
-    if (!eat(ID, interpret))
-    {
-        printf("Syntax Error: Expected a function name after 'def'.\n");
-        set_error_state_interpret(interpret);
-        return NULL;
-    }
+
     if (!eat(LPAREN, interpret))
     {
         printf("Syntax Error: Expected '(' after function name.\n");
@@ -364,11 +360,79 @@ static ASTNode *parse_function(Interpreter *interpret)
     return create_function_def_node(func_name, parameter_name, parameter_count,
                                     left_node);
 
-    // Clean up lable
+// Clean up lable
 cleanup:
     for (int i = 0; i < parameter_count; i++)
         free(parameter_name[i]);
     free(parameter_name);
+    free(func_name);
+    return NULL;
+}
+
+// Helper function to parse a function call
+static ASTNode *parse_function_call(Interpreter *interpret)
+{
+    char *func_name = NULL;
+    if (interpret->current_token.type == ID)
+    {
+        func_name = strdup(interpret->current_token.name);
+        eat(ID, interpret);
+    }
+    else
+    {
+        printf("Syntax Error: Expected a function name.\n");
+        set_error_state_interpret(interpret);
+        return NULL;
+    }
+    if (!eat(LPAREN, interpret))
+    {
+        printf(
+            "Syntax Error: Expected a '(' at the start of the argumet list.\n");
+        set_error_state_interpret(interpret);
+        free(func_name);
+        return NULL;
+    }
+
+    // Parse argument list
+    ASTNode **argument_list = NULL;
+    int argumet_count = 0;
+    while (interpret->current_token.type != RPAREN &&
+           interpret->current_token.type != EOF_TOKEN)
+    {
+        skip_eol(interpret);
+        argument_list =
+            realloc(argument_list, (argumet_count + 1) * sizeof(ASTNode *));
+        argument_list[argumet_count] = bitwise_or_expr(interpret);
+        argumet_count++;
+
+        // Check if there is a comma after the parameter
+        if (eat(COMMA, interpret))
+        {
+            if (interpret->current_token.type == RPAREN ||
+                interpret->current_token.type == EOF_TOKEN)
+            {
+                printf("Syntax Error: Expected parameter name after ','\n");
+                set_error_state_interpret(interpret);
+                goto cleanup;
+            }
+        }
+    }
+
+    if (!eat(RPAREN, interpret))
+    {
+        printf(
+            "Syntax Error: Expected a ')' at the end of the argumet list.\n");
+        set_error_state_interpret(interpret);
+        goto cleanup;
+    }
+
+    return create_function_call_node(func_name, argument_list, argumet_count);
+
+// Clean up lable
+cleanup:
+    for (int i = 0; i < argumet_count; i++)
+        free(argument_list[i]);
+    free(argument_list);
     free(func_name);
     return NULL;
 }
@@ -527,7 +591,7 @@ ASTNode *statement(Interpreter *interpret)
     switch (interpret->current_token.type)
     {
         case FUNCTION:
-            return parse_function(interpret);
+            return parse_function_def(interpret);
         case IF:
             return parse_if(interpret);
         case WHILE:
