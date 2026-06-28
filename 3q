@@ -28,7 +28,6 @@ static ASTNode *create_function_call_node(char *function_name,
                                           int arguments_count);
 static ASTNode *create_print_node(ASTNode *expr);
 static ASTNode *create_return_node(ASTNode *expr);
-static ASTNode *parse_id_or_call(Token id_token, Interpreter *interpret);
 
 static ASTNode *clone_ast(ASTNode *node);
 static bool eat(TokenType token, Interpreter *interprete);
@@ -70,8 +69,7 @@ static Value evaluate_function_call(ASTNode *node, Interpreter *interpret,
                                     SymbolTable *symtab);
 static RuntimeScope *init_scope(RuntimeScope *parent_scope);
 static void free_scope(RuntimeScope *scope);
-static void set_variable(Interpreter *interpret, const char *name, Value value,
-                         bool is_local);
+static void set_variable(Interpreter *interpret, const char *name, Value value);
 static Value get_variable(Interpreter *interpret, const char *name);
 static void set_math_const(Interpreter *interpret);
 static Symbol *get_function(SymbolTable *symtab, const char *name);
@@ -703,6 +701,7 @@ static ASTNode *parse_return(Interpreter *interpret)
     }
 
     ASTNode *left_node = bitwise_or_expr(interpret);
+
     if (!eat(RPAREN, interpret))
     {
         printf(
@@ -710,19 +709,8 @@ static ASTNode *parse_return(Interpreter *interpret)
         set_error_state_interpret(interpret);
         return NULL;
     }
-    return create_return_node(left_node);
-}
 
-static ASTNode *parse_id_or_call(Token id_token, Interpreter *interpret)
-{
-    if (interpret->current_token.type == LPAREN)
-    {
-        return parse_function_call(id_token.name, interpret);
-    }
-    else
-    {
-        return create_var_node(id_token);
-    }
+    return create_return_node(left_node);
 }
 
 ASTNode *statement(Interpreter *interpret)
@@ -778,6 +766,14 @@ ASTNode *statement(Interpreter *interpret)
         return create_assign_node(left_node, token, right_node);
     }
 
+    // Check if its a function call
+    if (interpret->current_token.type == LPAREN)
+    {
+        ASTNode *right_node =
+            parse_function_call(left_node->token.name, interpret);
+        free(left_node); // free left_node, because it wont get stored anywhere
+        return right_node;
+    }
     // No assigment was used, just return the node from expr
     return left_node;
 }
@@ -979,7 +975,6 @@ static ASTNode *factor(Interpreter *interpret)
     // For parentheses
     else if (token.type == LPAREN)
     {
-
         eat(LPAREN, interpret);
         ASTNode *result = bitwise_or_expr(interpret);
         if (!eat(RPAREN, interpret))
@@ -999,7 +994,7 @@ static ASTNode *factor(Interpreter *interpret)
     else if (token.type == ID)
     {
         eat(ID, interpret);
-        return parse_id_or_call(token, interpret);
+        return create_var_node(token);
     }
     else
     {
@@ -1804,7 +1799,7 @@ Value evaluate(ASTNode *node, Interpreter *interpret, SymbolTable *symtab)
         case NODE_ASSIGN:
         {
             Value left_val = evaluate(node->right, interpret, symtab);
-            set_variable(interpret, node->left->token.name, left_val, false);
+            set_variable(interpret, node->left->token.name, left_val);
             return left_val;
         }
 
@@ -1937,11 +1932,11 @@ Value evaluate(ASTNode *node, Interpreter *interpret, SymbolTable *symtab)
         }
         case NODE_RETURN:
         {
+            interpret->is_returning = true;
             if (node->left != NULL)
             {
                 Value expr = evaluate(node->left, interpret, symtab);
                 interpret->return_value = expr;
-                interpret->is_returning = true;
                 return expr;
             }
 
@@ -2278,12 +2273,13 @@ static Value evaluate_function_call(ASTNode *node, Interpreter *interpret,
     // Set the child scope as current scope, so it can be used in the
     // interpreter
     interpret->current_scope = child_scope;
+
     // Set all arguments as variables  in the scope
     for (int i = 0; i < node->ext.func_call.arg_count; i++)
     {
         Value arg_val =
             evaluate(node->ext.func_call.args[i], interpret, symtab);
-        set_variable(interpret, function->ext.func.params[i], arg_val, true);
+        set_variable(interpret, function->ext.func.params[i], arg_val);
     }
     if (interpret->error_found)
     {
@@ -2292,8 +2288,8 @@ static Value evaluate_function_call(ASTNode *node, Interpreter *interpret,
         return (Value){VAL_INT, {.i_val = 0}};
     }
 
-    Value result = evaluate(function->ext.func.body, interpret, symtab);
     // Evaluate the body of the function
+    Value result = evaluate(function->ext.func.body, interpret, symtab);
     if (interpret->error_found)
     {
         interpret->current_scope = child_scope->enclosing_scope;
@@ -2303,16 +2299,10 @@ static Value evaluate_function_call(ASTNode *node, Interpreter *interpret,
 
     // Restore the scope
     interpret->current_scope = child_scope->enclosing_scope;
+    interpret->is_returning = false;
     free_scope(child_scope);
-    if (interpret->is_returning)
-    {
-        interpret->is_returning = false;
-        return interpret->return_value;
-    }
-    else
-    {
-        return result;
-    }
+
+    return interpret->return_value;
 }
 // Initialize the interpreter struct
 void init_interpreter(Interpreter *interpret)
@@ -2377,7 +2367,7 @@ static void set_math_const(Interpreter *interpret)
     {
         // Inject the actual value into RAM
         set_variable(interpret, BUILTIN_CONSTANTS[i].name,
-                     BUILTIN_CONSTANTS[i].value, false);
+                     BUILTIN_CONSTANTS[i].value);
     }
 }
 
@@ -2399,8 +2389,7 @@ void free_interpreter(Interpreter *interpret)
 
 // Check if a variable name is already known and if not save it as a new
 // name
-static void set_variable(Interpreter *interpret, const char *name, Value value,
-                         bool is_local)
+static void set_variable(Interpreter *interpret, const char *name, Value value)
 {
     // Check if the variable already exist in the scope or parent scope and
     // if yes update it
@@ -2414,10 +2403,6 @@ static void set_variable(Interpreter *interpret, const char *name, Value value,
                 scope->memory[i].value = value;
                 return;
             }
-        }
-        if (is_local)
-        {
-            break;
         }
         scope = (RuntimeScope *)scope->enclosing_scope;
     }

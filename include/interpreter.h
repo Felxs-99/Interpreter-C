@@ -61,6 +61,7 @@ typedef enum
     ELSE,
     WHILE,
     FUNCTION,
+    RETURN,
     PRINT,
     COMMA,
     EOL,
@@ -91,6 +92,7 @@ typedef enum
     NODE_WHILE,
     NODE_FUNC_DEF,
     NODE_FUNC_CALL,
+    NODE_RETURN,
     NODE_PRINT
 } ast_node_type;
 
@@ -174,6 +176,8 @@ typedef struct
     size_t length;
     size_t position;
     Token current_token;
+    bool is_returning;
+    Value return_value;
     bool error_found;
     RuntimeScope *current_scope;
 } Interpreter;
