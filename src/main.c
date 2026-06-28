@@ -98,7 +98,7 @@ static void file_interpreter(char *path)
             break;     // Stop if rules are broken (like "pi = 4")
         }
 
-        evaluate(tree, &interpret);
+        evaluate(tree, &interpret, &symtab);
 
         // --- CLEANUP ---
         free_ast(tree);
@@ -213,7 +213,7 @@ static void cli()
                 break;     // Stop if rules are broken (like "pi = 4")
             }
 
-            evaluate(tree, &interpret);
+            evaluate(tree, &interpret, &symtab);
 
             // --- CLEANUP ---
             free_ast(tree);

@@ -15,6 +15,7 @@ UTEST_MAIN();
 TestResult calc(char *math_string, size_t length)
 {
     Interpreter interpret = {0};
+    init_interpreter(&interpret);
     interpret.buffer = math_string;
     interpret.length = length;
 
@@ -44,7 +45,7 @@ TestResult calc(char *math_string, size_t length)
 
     if (!interpret.error_found)
     {
-        Value final_answer = evaluate(tree, &interpret);
+        Value final_answer = evaluate(tree, &interpret, &symtab);
 
         if (!interpret.error_found)
         {
@@ -98,7 +99,7 @@ TestResult calc_script(const char **lines, int line_count)
                                 .error = true};
         }
 
-        final_answer = evaluate(tree, &interpret);
+        final_answer = evaluate(tree, &interpret, &symtab);
 
         if (interpret.error_found)
         {
@@ -568,7 +569,7 @@ static TestResult calc_block(const char *src)
                                 .error = true};
         }
 
-        final_answer = evaluate(tree, &interpret);
+        final_answer = evaluate(tree, &interpret, &symtab);
 
         if (interpret.error_found)
         {
@@ -854,6 +855,87 @@ UTEST(ScientificNotationTests, multiple_exponents_errors)
     char test_expr[] = "1e2e3";
     TestResult result = calc(test_expr, sizeof(test_expr));
     ASSERT_TRUE(result.error);
+}
+
+/*
+ * ####################
+ * #  Function Tests  #
+ * ####################
+ */
+
+// No-param function executes body
+UTEST(FunctionTests, no_param_function_runs)
+{
+    TestResult result = calc_block("def foo() {\nx = 42\n}\nfoo()");
+    ASSERT_FALSE(result.error);
+}
+
+// Single param is bound correctly
+UTEST(FunctionTests, single_param_bound)
+{
+    TestResult result = calc_block("def double(a) {\na * 2\n}\ndouble(5)");
+    ASSERT_FALSE(result.error);
+}
+
+// Two params, expression uses both
+UTEST(FunctionTests, two_params_expression)
+{
+    TestResult result = calc_block("def add(a, b) {\na + b\n}\nadd(3, 4)");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 7);
+}
+
+// Function param does not leak into outer scope
+UTEST(FunctionTests, param_does_not_leak)
+{
+    TestResult result = calc_block("def foo(x) {\nx + 1\n}\nfoo(10)\nx");
+    ASSERT_TRUE(result.error);
+}
+
+// Wrong argument count errors at semantic analysis
+UTEST(FunctionTests, wrong_arg_count_errors)
+{
+    TestResult result = calc_block("def foo(a, b) {\na + b\n}\nfoo(1)");
+    ASSERT_TRUE(result.error);
+}
+
+// Trailing comma in argument list errors
+UTEST(FunctionTests, trailing_comma_in_args_errors)
+{
+    TestResult result = calc_block("def foo(a) {\na\n}\nfoo(1,)");
+    ASSERT_TRUE(result.error);
+}
+
+// Trailing comma in param list errors
+UTEST(FunctionTests, trailing_comma_in_params_errors)
+{
+    TestResult result = calc_block("def foo(a,) {\na\n}\nfoo(1)");
+    ASSERT_TRUE(result.error);
+}
+
+// Calling undefined function errors
+UTEST(FunctionTests, undefined_function_errors)
+{
+    TestResult result = calc_block("bar(1)");
+    ASSERT_TRUE(result.error);
+}
+
+// Function can access outer scope variable
+UTEST(FunctionTests, function_reads_outer_scope)
+{
+    TestResult result = calc_block("x = 10\ndef foo() {\nx\n}\nfoo()");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 10);
+}
+
+// Recursive call — countdown via print side effect, no crash
+UTEST(FunctionTests, recursive_call_no_crash)
+{
+    TestResult result =
+        calc_block("def count(n) {\nif n > 0 {\ncount(n - 1)\n}\n}\ncount(5)");
+    ASSERT_FALSE(result.error);
 }
 
 /*

@@ -56,13 +56,22 @@ static bool lookup_symbol(SymbolTable *symtab, const char *name);
 static bool lookup_function(SymbolTable *symtab, const char *name,
                             int arguments_count);
 static void init_builtin_symbols(SymbolTable *symtab);
+static SymbolTable *create_child_scope(SymbolTable *parent_scope,
+                                       char **parameters, int parameter_count);
 
 // Interpreter function prototypes
-static Value evaluate_binop(ASTNode *node, Interpreter *interpret);
-static Value evaluate_unaop(ASTNode *node, Interpreter *interpret);
+static Value evaluate_binop(ASTNode *node, Interpreter *interpret,
+                            SymbolTable *symtab);
+static Value evaluate_unaop(ASTNode *node, Interpreter *interpret,
+                            SymbolTable *symtab);
+static Value evaluate_function_call(ASTNode *node, Interpreter *interpret,
+                                    SymbolTable *symtab);
+static RuntimeScope *init_scope(RuntimeScope *parent_scope);
+static void free_scope(RuntimeScope *scope);
 static void set_variable(Interpreter *interpret, const char *name, Value value);
 static Value get_variable(Interpreter *interpret, const char *name);
-void set_math_const(Interpreter *interpret);
+static void set_math_const(Interpreter *interpret);
+static Symbol *get_function(SymbolTable *symtab, const char *name);
 
 // Helper function prototypes
 static void make_simple_token(Interpreter *interpret, TokenType type);
@@ -1388,6 +1397,25 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
             define_function(symtab, node->ext.func_def.name,
                             node->ext.func_def.param_count,
                             node->ext.func_def.params, node->left);
+            SymbolTable *child_scope =
+                create_child_scope(symtab, node->ext.func_def.params,
+                                   node->ext.func_def.param_count);
+            // Error message should be printed already, just propagate to parent
+            // symtab and brake operation
+            if (child_scope == NULL)
+            {
+                symtab->error_found = true;
+                break;
+            }
+            analyze_tree(node->left, child_scope);
+            // Same thing, propagate to parent scope
+            if (child_scope == NULL)
+            {
+                symtab->error_found = true;
+                break;
+            }
+            free_symtab(child_scope);
+            free(child_scope);
             break;
         case NODE_FUNC_CALL:
             lookup_function(symtab, node->ext.func_call.name,
@@ -1617,6 +1645,9 @@ void init_symtab(SymbolTable *symtab)
 {
     symtab->capacity = 8;
     symtab->symbols = malloc(symtab->capacity * sizeof(Symbol));
+    symtab->count = 0;
+    symtab->error_found = false;
+    symtab->enclosing_scope = NULL;
 
     if (symtab->symbols == NULL)
     {
@@ -1638,6 +1669,37 @@ static void init_builtin_symbols(SymbolTable *symtab)
     }
 }
 
+// Creates a child symbol scope linked to the parent scope. Used for function
+// scopes -> returns Null if it couldn't be created
+static SymbolTable *create_child_scope(SymbolTable *parent_scope,
+                                       char **parameters, int parameter_count)
+{
+    SymbolTable *child_scope = malloc(sizeof(SymbolTable));
+    init_symtab(child_scope);
+
+    if (child_scope->error_found)
+    {
+        free_symtab(child_scope);
+        free(child_scope);
+        return NULL;
+    }
+
+    child_scope->enclosing_scope = parent_scope;
+
+    // Define every varibale in the parameters
+    for (int i = 0; i < parameter_count; i++)
+    {
+        define_symbol(child_scope, parameters[i], false);
+        if (child_scope->error_found)
+        {
+            free_symtab(child_scope);
+            free(child_scope);
+            return NULL;
+        }
+    }
+    return child_scope;
+}
+
 // Free the allocated memory of the symbol table
 void free_symtab(SymbolTable *symtab)
 {
@@ -1645,6 +1707,7 @@ void free_symtab(SymbolTable *symtab)
     symtab->symbols = NULL;
     symtab->count = 0;
     symtab->capacity = 0;
+    symtab->enclosing_scope = NULL;
 }
 /*
  * ####################
@@ -1652,7 +1715,7 @@ void free_symtab(SymbolTable *symtab)
  * ####################
  */
 // Rcursively walks the AST and calculates the result
-Value evaluate(ASTNode *node, Interpreter *interpret)
+Value evaluate(ASTNode *node, Interpreter *interpret, SymbolTable *symtab)
 {
     // If an error was found return 0
     if (node == NULL || interpret->error_found)
@@ -1668,17 +1731,17 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
 
         case NODE_BINOP:
         {
-            return evaluate_binop(node, interpret);
+            return evaluate_binop(node, interpret, symtab);
         }
 
         case NODE_UNAOP:
         {
-            return evaluate_unaop(node, interpret);
+            return evaluate_unaop(node, interpret, symtab);
         }
         case NODE_CONST_ASSIGN:
         case NODE_ASSIGN:
         {
-            Value left_val = evaluate(node->right, interpret);
+            Value left_val = evaluate(node->right, interpret, symtab);
             set_variable(interpret, node->left->token.name, left_val);
             return left_val;
         }
@@ -1689,19 +1752,20 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
         }
         case NODE_IF:
         {
-            Value left_val = evaluate(node->left, interpret);
+            Value left_val = evaluate(node->left, interpret, symtab);
             Value right_val = (Value){0};
             // Statement must be a boolean (no C style shinanigans)
             if (left_val.type == VAL_BOOL)
             {
                 if (node->right != NULL && left_val.as.b_val == true)
                 {
-                    right_val = evaluate(node->right, interpret);
+                    right_val = evaluate(node->right, interpret, symtab);
                 }
                 else if (node->ext.else_node != NULL &&
                          left_val.as.b_val == false)
                 {
-                    right_val = evaluate(node->ext.else_node, interpret);
+                    right_val =
+                        evaluate(node->ext.else_node, interpret, symtab);
                 }
                 return right_val;
             }
@@ -1716,11 +1780,11 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
         }
         case NODE_COMPOUND:
         {
-            Value left_val = evaluate(node->left, interpret);
+            Value left_val = evaluate(node->left, interpret, symtab);
             Value right_val = (Value){0};
             if (node->right != NULL)
             {
-                right_val = evaluate(node->right, interpret);
+                right_val = evaluate(node->right, interpret, symtab);
                 return right_val;
             }
             else
@@ -1730,17 +1794,17 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
         }
         case NODE_WHILE:
         {
-            Value left_val = evaluate(node->left, interpret);
+            Value left_val = evaluate(node->left, interpret, symtab);
             Value right_val = (Value){0};
             // Statement must be a boolean (no C style shinanigans)
             if (left_val.type == VAL_BOOL)
             {
                 while (left_val.as.b_val && !interpret->error_found)
                 {
-                    right_val = evaluate(node->right, interpret);
+                    right_val = evaluate(node->right, interpret, symtab);
                     // Reevaluating the statement every time and check if
                     // its still a boolean
-                    left_val = evaluate(node->left, interpret);
+                    left_val = evaluate(node->left, interpret, symtab);
                     if (left_val.type != VAL_BOOL)
                     {
                         printf("Runtime Error: While-Statement requires a "
@@ -1769,11 +1833,11 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
         }
         case NODE_FUNC_CALL:
         {
-            return evaluate_function_call(node, interpret);
+            return evaluate_function_call(node, interpret, symtab);
         }
         case NODE_PRINT:
         {
-            Value expr = evaluate(node->left, interpret);
+            Value expr = evaluate(node->left, interpret, symtab);
 
             // Only print if evaluation didn't trigger a runtime error (like
             // divide by zero)
@@ -1799,10 +1863,11 @@ Value evaluate(ASTNode *node, Interpreter *interpret)
 }
 
 // Evaluate binary operators
-static Value evaluate_binop(ASTNode *node, Interpreter *interpret)
+static Value evaluate_binop(ASTNode *node, Interpreter *interpret,
+                            SymbolTable *symtab)
 {
-    Value left_val = evaluate(node->left, interpret);
-    Value right_val = evaluate(node->right, interpret);
+    Value left_val = evaluate(node->left, interpret, symtab);
+    Value right_val = evaluate(node->right, interpret, symtab);
 
     if (interpret->error_found)
     {
@@ -2040,9 +2105,10 @@ static Value evaluate_binop(ASTNode *node, Interpreter *interpret)
 }
 
 // Evaluate unary operators
-static Value evaluate_unaop(ASTNode *node, Interpreter *interpret)
+static Value evaluate_unaop(ASTNode *node, Interpreter *interpret,
+                            SymbolTable *symtab)
 {
-    Value expr_val = evaluate(node->right, interpret);
+    Value expr_val = evaluate(node->right, interpret, symtab);
     if (interpret->error_found)
         return (Value){VAL_INT, {.i_val = 0}};
 
@@ -2101,9 +2167,58 @@ static Value evaluate_unaop(ASTNode *node, Interpreter *interpret)
     return (Value){VAL_INT, {.i_val = 0}};
 }
 
-// TODO: Evaluate function calls
-// static Value evaluate_function_call(ASTNode *node, Interpreter *interpret) {}
+// Evaluate function calls
+static Value evaluate_function_call(ASTNode *node, Interpreter *interpret,
+                                    SymbolTable *symtab)
+{
+    Symbol *function = get_function(symtab, node->ext.func_call.name);
+    // Should be prevented, but check is still good
+    if (function == NULL)
+    {
+        set_error_state_interpret(interpret);
+        return (Value){VAL_INT, {.i_val = 0}};
+    }
+    RuntimeScope *child_scope = init_scope(interpret->current_scope);
 
+    if (child_scope == NULL)
+    {
+        set_error_state_interpret(interpret);
+        return (Value){VAL_INT, {.i_val = 0}};
+    }
+
+    // Set the child scope as current scope, so it can be used in the
+    // interpreter
+    interpret->current_scope = child_scope;
+
+    // Set all arguments as variables  in the scope
+    for (int i = 0; i < node->ext.func_call.arg_count; i++)
+    {
+        Value arg_val =
+            evaluate(node->ext.func_call.args[i], interpret, symtab);
+        set_variable(interpret, function->ext.func.params[i], arg_val);
+    }
+    if (interpret->error_found)
+    {
+        interpret->current_scope = child_scope->enclosing_scope;
+        free_scope(child_scope);
+        return (Value){VAL_INT, {.i_val = 0}};
+    }
+
+    // Evaluate the body of the function
+    Value result = evaluate(function->ext.func.body, interpret, symtab);
+    if (interpret->error_found)
+    {
+        interpret->current_scope = child_scope->enclosing_scope;
+        free_scope(child_scope);
+        return (Value){VAL_INT, {.i_val = 0}};
+    }
+
+    // Restore the scope
+    interpret->current_scope = child_scope->enclosing_scope;
+    free_scope(child_scope);
+
+    return result;
+}
 // Initialize the interpreter struct
 void init_interpreter(Interpreter *interpret)
 {
@@ -2113,22 +2228,53 @@ void init_interpreter(Interpreter *interpret)
     interpret->current_token = (Token){0};
     interpret->error_found = false;
 
-    interpret->mem_count = 0;
-    interpret->mem_capacity = 8;
+    // Init the scope
+    interpret->current_scope = init_scope(NULL);
 
-    interpret->memory = malloc(interpret->mem_capacity * sizeof(MemorySlot));
-
-    if (interpret->memory == NULL)
+    // Check current_scope first — dereferencing NULL pointer is undefined
+    // behavior
+    if (interpret->current_scope == NULL ||
+        interpret->current_scope->memory == NULL)
     {
-        printf("Fatal Error: Failed to allocate memory for variables!\n");
         interpret->error_found = true;
         return;
     }
     set_math_const(interpret);
 }
 
+// Initialize a scope, if its the top one set parent_scope to NULL
+static RuntimeScope *init_scope(RuntimeScope *parent_scope)
+{
+    RuntimeScope *new_scope = malloc(sizeof(RuntimeScope));
+    if (new_scope == NULL)
+    {
+        printf("Fatal Error: Failed to allocate memory for scopes!\n");
+        return NULL;
+    }
+    new_scope->enclosing_scope = parent_scope;
+    new_scope->memory_count = 0;
+    new_scope->memory_capacity = 8;
+
+    new_scope->memory = malloc(new_scope->memory_capacity * sizeof(MemorySlot));
+
+    if (new_scope->memory == NULL)
+    {
+        free_scope(new_scope);
+        printf("Fatal Error: Failed to allocate memory for scopes!\n");
+        return NULL;
+    }
+    return new_scope;
+}
+
+// Free scope memory
+static void free_scope(RuntimeScope *scope)
+{
+    free(scope->memory);
+    free(scope);
+}
+
 // Set mathematical constants in the interpreter.
-void set_math_const(Interpreter *interpret)
+static void set_math_const(Interpreter *interpret)
 {
     for (unsigned int i = 0; i < NUM_BUILTINS; i++)
     {
@@ -2151,37 +2297,42 @@ void reset_interpreter_line(Interpreter *interpret, char *buffer)
 // Free the allocated memory of the variable structur in the interpreter
 void free_interpreter(Interpreter *interpret)
 {
-    free(interpret->memory);
-    interpret->memory = NULL;
-    interpret->mem_count = 0;
-    interpret->mem_capacity = 0;
+    free_scope(interpret->current_scope);
 }
 
 // Check if a variable name is already known and if not save it as a new
 // name
 static void set_variable(Interpreter *interpret, const char *name, Value value)
 {
-    // Check if the variable already exist and if yes update it
-    for (unsigned int i = 0; i < interpret->mem_count; i++)
+    // Check if the variable already exist in the scope or parent scope and
+    // if yes update it
+    RuntimeScope *scope = interpret->current_scope;
+    while (scope != NULL)
     {
-        if (strcmp(interpret->memory[i].name, name) == 0)
+        for (unsigned int i = 0; i < scope->memory_count; i++)
         {
-            interpret->memory[i].value = value;
-            return;
+            if (strcmp(scope->memory[i].name, name) == 0)
+            {
+                scope->memory[i].value = value;
+                return;
+            }
         }
+        scope = (RuntimeScope *)scope->enclosing_scope;
     }
 
-    if (interpret->mem_count >= interpret->mem_capacity)
+    if (interpret->current_scope->memory_count >=
+        interpret->current_scope->memory_capacity)
     {
         // realloc with 0 is equal to free, what shouldn't happen here
-        if (interpret->mem_capacity == 0)
+        if (interpret->current_scope->memory_capacity == 0)
         {
-            interpret->mem_capacity = 8;
+            interpret->current_scope->memory_capacity = 8;
         }
 
-        interpret->mem_capacity *= 2;
+        interpret->current_scope->memory_capacity *= 2;
         MemorySlot *new_memory = (MemorySlot *)realloc(
-            interpret->memory, interpret->mem_capacity * sizeof(MemorySlot));
+            interpret->current_scope->memory,
+            interpret->current_scope->memory_capacity * sizeof(MemorySlot));
 
         if (new_memory == NULL)
         {
@@ -2189,14 +2340,14 @@ static void set_variable(Interpreter *interpret, const char *name, Value value)
             set_error_state_interpret(interpret);
             return;
         }
-        interpret->memory = new_memory;
+        interpret->current_scope->memory = new_memory;
     }
-    unsigned int index = interpret->mem_count;
+    unsigned int index = interpret->current_scope->memory_count;
     if (strlen(name) < NAME_LENGTH)
     {
-        strcpy(interpret->memory[index].name, name);
-        interpret->memory[index].value = value;
-        interpret->mem_count++;
+        strcpy(interpret->current_scope->memory[index].name, name);
+        interpret->current_scope->memory[index].value = value;
+        interpret->current_scope->memory_count++;
     }
     else
     {
@@ -2209,17 +2360,39 @@ static void set_variable(Interpreter *interpret, const char *name, Value value)
 // value
 static Value get_variable(Interpreter *interpret, const char *name)
 {
-    for (unsigned int i = 0; i < interpret->mem_count; i++)
+    // Check if the variable already exist in the scope or parent scope and
+    // if yes update it
+    RuntimeScope *scope = interpret->current_scope;
+    while (scope != NULL)
     {
-        if (strcmp(interpret->memory[i].name, name) == 0)
+        for (unsigned int i = 0; i < scope->memory_count; i++)
         {
-            return interpret->memory[i].value;
+            if (strcmp(scope->memory[i].name, name) == 0)
+            {
+                return scope->memory[i].value;
+            }
         }
+        scope = (RuntimeScope *)scope->enclosing_scope;
     }
 
     printf("Runtime Error: Variable '%s' is not defined!\n", name);
     set_error_state_interpret(interpret);
     return (Value){VAL_INT, {.i_val = 0}};
+}
+
+// Get the functgion from the symbol table
+static Symbol *get_function(SymbolTable *symtab, const char *name)
+{
+    Symbol *function = NULL;
+    for (unsigned int i = 0; i < symtab->count; i++)
+    {
+        if (strcmp(symtab->symbols[i].name, name) == 0)
+        {
+            // Semantic analyzer should caught every error befor
+            function = &symtab->symbols[i];
+        }
+    }
+    return function;
 }
 
 /*

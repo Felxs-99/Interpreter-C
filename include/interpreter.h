@@ -159,6 +159,14 @@ typedef struct
     Value value;
 } MemorySlot;
 
+typedef struct RuntimeScope
+{
+    MemorySlot *memory;
+    unsigned int memory_count;
+    unsigned int memory_capacity;
+    struct RuntimeScope *enclosing_scope;
+} RuntimeScope;
+
 // Run-time evaluator
 typedef struct
 {
@@ -167,16 +175,13 @@ typedef struct
     size_t position;
     Token current_token;
     bool error_found;
-
-    MemorySlot *memory;
-    unsigned int mem_count;
-    unsigned int mem_capacity;
+    RuntimeScope *current_scope;
 } Interpreter;
 
 // Statement function
 ASTNode *statement(Interpreter *interpret);
 // Evaluate the result
-Value evaluate(ASTNode *node, Interpreter *interpret);
+Value evaluate(ASTNode *node, Interpreter *interpret, SymbolTable *symtab);
 // Clean up the ast in memory
 void free_ast(ASTNode *node);
 
@@ -192,6 +197,7 @@ void free_symtab(SymbolTable *symtab);
 
 // Initialize the interpreter struct
 void init_interpreter(Interpreter *interpret);
+// Free scope memory
 void reset_interpreter_line(Interpreter *interpret, char *buffer);
 
 // Free the allocated memory of the variable structur in the interpreter
