@@ -3,6 +3,7 @@
 #include "overflow.h"
 #include <ctype.h>
 #include <limits.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -90,6 +91,8 @@ static bool is_relation_op(TokenType type);
 static char peek(Interpreter *interpret);
 static ASTNode *parse_compound(Interpreter *interpret);
 static void skip_eol(Interpreter *interpret);
+Value buildin_sin(Interpreter *interpret, Value *arguments,
+                  unsigned int arguments_count);
 
 // Structure for math constants (to be in one place)
 typedef struct
@@ -109,6 +112,23 @@ static const BuiltinConstant BUILTIN_CONSTANTS[] = {
 // Calculate how many items are in the list automatically
 static const unsigned int NUM_BUILTINS =
     sizeof(BUILTIN_CONSTANTS) / sizeof(BUILTIN_CONSTANTS[0]);
+
+// Structure for buildin functions
+typedef struct
+{
+    const char *name;
+    unsigned int arguments_count;
+    Value (*fn)(Interpreter *, Value *, unsigned int);
+} BuiltinFunctions;
+
+static const BuiltinFunctions BUILDIN_FUNCTIONS[] = {{
+    "sin",
+    1,
+    buildin_sin,
+}};
+
+static const unsigned int NUM_BUILTIN_FUNCTIONS =
+    sizeof(BUILDIN_FUNCTIONS) / sizeof(BUILDIN_FUNCTIONS[0]);
 
 typedef struct
 {
@@ -1480,6 +1500,35 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
             free(child_scope);
             break;
         case NODE_FUNC_CALL:
+            // Check if its a builin function
+            for (unsigned int i = 0; i < NUM_BUILTIN_FUNCTIONS; i++)
+            {
+                if (strcmp(BUILDIN_FUNCTIONS[i].name,
+                           node->ext.func_call.name) == 0)
+                {
+                    // found it, check arguments list
+                    for (unsigned int j = 0; j < node->ext.func_call.arg_count;
+                         j++)
+                    {
+                        analyze_tree(node->ext.func_call.args[j], symtab);
+                    }
+                    if (BUILDIN_FUNCTIONS[i].arguments_count !=
+                        node->ext.func_call.arg_count)
+                    {
+                        printf("Semantic Error: Builtin %s function takes %d "
+                               "arguments, "
+                               "but "
+                               "got %d!\n",
+                               BUILDIN_FUNCTIONS[i].name,
+                               BUILDIN_FUNCTIONS[i].arguments_count,
+                               node->ext.func_call.arg_count);
+                        set_error_state_symtab(symtab);
+                        return;
+                    }
+
+                    return;
+                }
+            }
             lookup_function(symtab, node->ext.func_call.name,
                             node->ext.func_call.arg_count);
             // Check everything in the arguments list
@@ -2266,6 +2315,31 @@ static Value evaluate_unaop(ASTNode *node, Interpreter *interpret,
 static Value evaluate_function_call(ASTNode *node, Interpreter *interpret,
                                     SymbolTable *symtab)
 {
+    // Check if its a buildin function
+    for (unsigned int i = 0; i < NUM_BUILTIN_FUNCTIONS; i++)
+    {
+        if (strcmp(BUILDIN_FUNCTIONS[i].name, node->ext.func_call.name) == 0)
+        {
+            Value *arguments =
+                malloc(node->ext.func_call.arg_count * sizeof(Value));
+            for (unsigned int j = 0; j < node->ext.func_call.arg_count; j++)
+            {
+                arguments[j] =
+                    evaluate(node->ext.func_call.args[j], interpret, symtab);
+            }
+
+            if (interpret->error_found)
+            {
+                free(arguments);
+                return (Value){.type = VAL_INT, .as = {.i_val = 0}};
+            }
+            Value result = BUILDIN_FUNCTIONS[i].fn(
+                interpret, arguments, node->ext.func_call.arg_count);
+            free(arguments);
+            return result;
+        }
+    }
+
     Symbol *function = get_function(symtab, node->ext.func_call.name);
     // Should be prevented, but check is still good
     if (function == NULL)
@@ -2273,6 +2347,7 @@ static Value evaluate_function_call(ASTNode *node, Interpreter *interpret,
         set_error_state_interpret(interpret);
         return (Value){VAL_INT, {.i_val = 0}};
     }
+
     RuntimeScope *child_scope = init_scope(interpret->current_scope);
 
     if (child_scope == NULL)
@@ -2590,10 +2665,45 @@ static ASTNode *parse_compound(Interpreter *interpret)
     return create_compound_node(stmt, next);
 }
 
+// Skip EOL char
 static void skip_eol(Interpreter *interpret)
 {
     while (interpret->current_token.type == EOL)
     {
         get_next_token(interpret);
     }
+}
+
+// Wrapper function to use c build in sin function
+Value buildin_sin(Interpreter *interpret, Value *arguments,
+                  unsigned int arguments_count)
+{
+    // Sin only takes one argument
+    if (arguments_count != 1)
+    {
+        printf("Runtime Error: Builtin sin takes 1 argument, got %d!\n",
+               arguments_count);
+        set_error_state_interpret(interpret);
+        return (Value){VAL_INT, {.i_val = 0}};
+    }
+
+    if (arguments[0].type == VAL_BOOL)
+    {
+        printf("Runtime Error: Builtin sin takes integeger argument, got "
+               "boolean!\n");
+        set_error_state_interpret(interpret);
+        return (Value){VAL_INT, {.i_val = 0}};
+    }
+
+    double input = 0.0;
+    if (arguments[0].type == VAL_INT)
+    {
+        input = (double)arguments[0].as.i_val;
+    }
+    else
+    {
+        input = arguments[0].as.f_val;
+    }
+
+    return (Value){VAL_FLOAT, {.f_val = sin(input)}};
 }
