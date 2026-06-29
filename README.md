@@ -12,6 +12,8 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - **Leak-Free Panic Mode:** Robust error recovery that detects invalid syntax, safely unwinds and frees the dynamically allocated AST, and returns precise diagnostics.
 - **Forgiving Syntax:** 100% whitespace agnostic.
 - **Control Flow:** `if`/`else` and `while` with `{}` block syntax, supporting both inline and multiline forms.
+- **Functions:** First-class `def` functions with parameter passing, local scopes, and `return()` values.
+- **Recursion:** Runtime scope chain (`RuntimeScope` linked list) enables full recursive calls with isolated per-call state.
 - **Explicit Output:** `print()` statement for controlled output — file mode is silent by default.
 - **Interactive REPL:** CLI with readline history and smart `...` prompt for multi-line block input.
 
@@ -32,8 +34,9 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - [x] `while` loop — *Done 2026-06-21*
 - [x] `print()` built-in statement — *Done 2026-06-21*
 - [x] CLI multi-line block input with brace depth tracking — *Done 2026-06-21*
-- [ ] Scoped symbol table (nested scopes via `enclosing_scope` pointer)
-- [ ] Functions (`def` keyword) with local scope
+- [x] Scoped symbol table (nested scopes via `enclosing_scope` pointer) — *Done 2026-06-29*
+- [x] Functions (`def` keyword) with local scope and `return()` — *Done 2026-06-29*
+- [x] Recursion via `RuntimeScope` call-frame chain — *Done 2026-06-29*
 - [ ] Built-in math functions like `sin()`, `cos()`
 - [ ] Semantic Analysis: type checking in symbol table
 - [ ] Professional Error Reporting: line and column tracking for Clang-style diagnostics
@@ -45,5 +48,7 @@ The project follows a standard, state-driven compiler pipeline:
 
 1. **Lexical Analysis (Lexer):** Scans the raw character buffer to emit strongly-typed `Token` structs, utilizing an isolated sandbox memory state to safely parse strings into integers.
 2. **Recursive Descent Parser:** Consumes the token stream to dynamically construct an Abstract Syntax Tree (AST), ensuring mathematical precedence is mapped directly into the data structure.
-3. **AST Evaluator:** Traverses the generated tree (Post-order) to compute the final expression, strictly protected by type-generic compiler extensions to trap Undefined Behavior.
-4. **Context Encapsulation:** All execution state—including buffers, position pointers, and panic flags—is strictly isolated within a central `Interpreter` context struct, eliminating global variables.
+3. **Semantic Analysis (Symbol Table):** A compile-time pass walks the AST before evaluation to enforce scoping rules, catch undefined variables, validate function signatures, and analyze function bodies in isolated child scopes.
+4. **AST Evaluator:** Traverses the generated tree (Post-order) to compute the final expression, strictly protected by type-generic compiler extensions to trap Undefined Behavior.
+5. **Runtime Scope Chain:** Function calls allocate a `RuntimeScope` frame on a linked list, binding arguments as local variables. The chain is walked for variable lookup, enabling full lexical scoping and recursion.
+6. **Context Encapsulation:** All execution state—including buffers, position pointers, and panic flags—is strictly isolated within a central `Interpreter` context struct, eliminating global variables.

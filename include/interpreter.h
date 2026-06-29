@@ -110,13 +110,13 @@ typedef struct ASTNode
         { // NODE_FUNC_DEF
             char *name;
             char **params;
-            int param_count;
+            unsigned int param_count;
         } func_def;
         struct
         { // NODE_FUNC_CALL
             char *name;
             struct ASTNode **args;
-            int arg_count;
+            unsigned int arg_count;
         } func_call;
     } ext;
 } ASTNode;
@@ -137,7 +137,7 @@ typedef struct
     {
         struct
         {
-            int params_count;
+            unsigned int params_count;
             char **params;
             ASTNode *body;
         } func;

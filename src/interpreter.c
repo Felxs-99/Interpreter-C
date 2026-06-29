@@ -22,10 +22,11 @@ static ASTNode *create_if_node(ASTNode *condition, ASTNode *body,
 static ASTNode *create_compound_node(ASTNode *statement, ASTNode *next);
 static ASTNode *create_while_node(ASTNode *condition, ASTNode *body);
 static ASTNode *create_function_def_node(char *function_name, char **parameter,
-                                         int parameter_count, ASTNode *body);
+                                         unsigned int parameter_count,
+                                         ASTNode *body);
 static ASTNode *create_function_call_node(char *function_name,
                                           ASTNode **arguments,
-                                          int arguments_count);
+                                          unsigned int arguments_count);
 static ASTNode *create_print_node(ASTNode *expr);
 static ASTNode *create_return_node(ASTNode *expr);
 static ASTNode *parse_id_or_call(Token id_token, Interpreter *interpret);
@@ -52,14 +53,16 @@ static TokenType get_keyword_type(const char *name);
 // Symbol table function prototypes
 static void define_symbol(SymbolTable *symtab, const char *name, bool is_const);
 static void define_function(SymbolTable *symtab, const char *name,
-                            int param_count, char **parameters, ASTNode *body);
+                            unsigned int param_count, char **parameters,
+                            ASTNode *body);
 static bool grow_symtab(SymbolTable *symtab);
 static bool lookup_symbol(SymbolTable *symtab, const char *name);
 static bool lookup_function(SymbolTable *symtab, const char *name,
-                            int arguments_count);
+                            unsigned int arguments_count);
 static void init_builtin_symbols(SymbolTable *symtab);
 static SymbolTable *create_child_scope(SymbolTable *parent_scope,
-                                       char **parameters, int parameter_count);
+                                       char **parameters,
+                                       unsigned int parameter_count);
 
 // Interpreter function prototypes
 static Value evaluate_binop(ASTNode *node, Interpreter *interpret,
@@ -239,7 +242,8 @@ static ASTNode *create_while_node(ASTNode *condition, ASTNode *body)
 
 // Ast node for function definition
 static ASTNode *create_function_def_node(char *function_name, char **parameter,
-                                         int parameter_count, ASTNode *body)
+                                         unsigned int parameter_count,
+                                         ASTNode *body)
 {
     ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
     node->type = NODE_FUNC_DEF;
@@ -255,7 +259,7 @@ static ASTNode *create_function_def_node(char *function_name, char **parameter,
 // Ast node for function call
 static ASTNode *create_function_call_node(char *function_name,
                                           ASTNode **arguments,
-                                          int arguments_count)
+                                          unsigned int arguments_count)
 {
     ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
     node->type = NODE_FUNC_CALL;
@@ -304,7 +308,7 @@ void free_ast(ASTNode *node)
     {
         case NODE_FUNC_DEF:
             free(node->ext.func_def.name);
-            for (int i = 0; i < node->ext.func_def.param_count; i++)
+            for (unsigned int i = 0; i < node->ext.func_def.param_count; i++)
             {
                 free(node->ext.func_def.params[i]);
             }
@@ -313,7 +317,7 @@ void free_ast(ASTNode *node)
         case NODE_FUNC_CALL:
             free(node->ext.func_call.name);
 
-            for (int i = 0; i < node->ext.func_call.arg_count; i++)
+            for (unsigned int i = 0; i < node->ext.func_call.arg_count; i++)
             {
                 free_ast(node->ext.func_call
                              .args[i]); // args is an array of ast nodes
@@ -348,7 +352,7 @@ static ASTNode *clone_ast(ASTNode *node)
             copied_node->ext.func_def.params =
                 malloc(node->ext.func_def.param_count * sizeof(char *));
 
-            for (int i = 0; i < node->ext.func_def.param_count; i++)
+            for (unsigned int i = 0; i < node->ext.func_def.param_count; i++)
             {
                 copied_node->ext.func_def.params[i] =
                     strdup(node->ext.func_def.params[i]);
@@ -361,7 +365,7 @@ static ASTNode *clone_ast(ASTNode *node)
             copied_node->ext.func_call.args =
                 malloc(node->ext.func_call.arg_count * sizeof(ASTNode *));
 
-            for (int i = 0; i < node->ext.func_call.arg_count; i++)
+            for (unsigned int i = 0; i < node->ext.func_call.arg_count; i++)
             {
                 copied_node->ext.func_call.args[i] =
                     clone_ast(node->ext.func_call.args[i]);
@@ -1479,7 +1483,7 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
             lookup_function(symtab, node->ext.func_call.name,
                             node->ext.func_call.arg_count);
             // Check everything in the arguments list
-            for (int i = 0; i < node->ext.func_call.arg_count; i++)
+            for (unsigned int i = 0; i < node->ext.func_call.arg_count; i++)
             {
                 analyze_tree(node->ext.func_call.args[i], symtab);
             }
@@ -1547,7 +1551,8 @@ static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
 
 // Put a new function in the table if it does not exist or is not const
 static void define_function(SymbolTable *symtab, const char *name,
-                            int param_count, char **parameters, ASTNode *body)
+                            unsigned int param_count, char **parameters,
+                            ASTNode *body)
 {
     // Check if the syymbol already exists
     for (unsigned int i = 0; i < symtab->count; i++)
@@ -1587,7 +1592,7 @@ static void define_function(SymbolTable *symtab, const char *name,
         symtab->symbols[index].symbol_kind = KIND_FUNC;
         symtab->symbols[index].ext.func.params =
             malloc(param_count * sizeof(char *));
-        for (int i = 0; i < param_count; i++)
+        for (unsigned int i = 0; i < param_count; i++)
         {
             symtab->symbols[index].ext.func.params[i] = strdup(parameters[i]);
         }
@@ -1658,7 +1663,7 @@ static bool lookup_symbol(SymbolTable *symtab, const char *name)
 
 // Check if a symbol is in the symbol table
 static bool lookup_function(SymbolTable *symtab, const char *name,
-                            int arguments_count)
+                            unsigned int arguments_count)
 {
     for (unsigned int i = 0; i < symtab->count; i++)
     {
@@ -1734,7 +1739,8 @@ static void init_builtin_symbols(SymbolTable *symtab)
 // Creates a child symbol scope linked to the parent scope. Used for function
 // scopes -> returns Null if it couldn't be created
 static SymbolTable *create_child_scope(SymbolTable *parent_scope,
-                                       char **parameters, int parameter_count)
+                                       char **parameters,
+                                       unsigned int parameter_count)
 {
     SymbolTable *child_scope = malloc(sizeof(SymbolTable));
     init_symtab(child_scope);
@@ -1749,7 +1755,7 @@ static SymbolTable *create_child_scope(SymbolTable *parent_scope,
     child_scope->enclosing_scope = parent_scope;
 
     // Define every varibale in the parameters
-    for (int i = 0; i < parameter_count; i++)
+    for (unsigned int i = 0; i < parameter_count; i++)
     {
         define_symbol(child_scope, parameters[i], false);
         if (child_scope->error_found)
@@ -2279,7 +2285,7 @@ static Value evaluate_function_call(ASTNode *node, Interpreter *interpret,
     // interpreter
     interpret->current_scope = child_scope;
     // Set all arguments as variables  in the scope
-    for (int i = 0; i < node->ext.func_call.arg_count; i++)
+    for (unsigned int i = 0; i < node->ext.func_call.arg_count; i++)
     {
         Value arg_val =
             evaluate(node->ext.func_call.args[i], interpret, symtab);

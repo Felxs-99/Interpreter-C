@@ -940,6 +940,101 @@ UTEST(FunctionTests, recursive_call_no_crash)
 
 /*
  * ####################
+ * #  Return Tests    #
+ * ####################
+ */
+
+// Basic return: function returns a literal value
+UTEST(ReturnTests, return_literal_value)
+{
+    TestResult result = calc_block("def foo() {\nreturn(42)\n}\nfoo()");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 42);
+}
+
+// Return with expression: a + b
+UTEST(ReturnTests, return_expression)
+{
+    TestResult result =
+        calc_block("def add(a, b) {\nreturn(a + b)\n}\nadd(3, 4)");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 7);
+}
+
+// Return with float expression
+UTEST(ReturnTests, return_float_expression)
+{
+    TestResult result = calc_block("def half(x) {\nreturn(x / 2)\n}\nhalf(10)");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 5.0, 1e-9);
+}
+
+// Early return: if branch triggers return, skips second return
+UTEST(ReturnTests, return_early_if_branch)
+{
+    TestResult result =
+        calc_block("def sign(x) {\nif x > 0 {\nreturn(1)\n}\nreturn(0)\n}\nsign(5)");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 1);
+}
+
+// Early return: condition false, falls through to second return
+UTEST(ReturnTests, return_fallthrough_to_second)
+{
+    TestResult result =
+        calc_block("def sign(x) {\nif x > 0 {\nreturn(1)\n}\nreturn(0)\n}\nsign(-3)");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 0);
+}
+
+// Return from inside a while loop exits the loop early
+UTEST(ReturnTests, return_exits_while_loop)
+{
+    TestResult result = calc_block(
+        "def stopper(n) {\nx = 0\nwhile x < n {\nx = x + 1\nif x == 3 "
+        "{\nreturn(x)\n}\n}\nreturn(0)\n}\nstopper(10)");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 3);
+}
+
+// Return value is usable in outer expression
+UTEST(ReturnTests, return_value_in_expression)
+{
+    TestResult result =
+        calc_block("def two() {\nreturn(2)\n}\ntwo() + 3");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 5);
+}
+
+// is_returning flag is cleared after call — second function works normally
+UTEST(ReturnTests, return_flag_cleared_between_calls)
+{
+    TestResult result = calc_block(
+        "def one() {\nreturn(1)\n}\ndef two() {\nreturn(2)\n}\none()\ntwo()");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 2);
+}
+
+// Recursive factorial via return
+UTEST(ReturnTests, return_recursive_factorial)
+{
+    TestResult result = calc_block(
+        "def fact(n) {\nif n == 0 {\nreturn(1)\n}\nreturn(n * fact(n - 1))\n}\nfact(5)");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 120);
+}
+
+/*
+ * ####################
  * #   Negativ Tests  #
  * ####################
  */
