@@ -60,6 +60,7 @@ static bool grow_symtab(SymbolTable *symtab);
 static bool lookup_symbol(SymbolTable *symtab, const char *name);
 static bool lookup_function(SymbolTable *symtab, const char *name,
                             unsigned int arguments_count);
+static bool is_buildin_function(const char *name);
 static void init_builtin_symbols(SymbolTable *symtab);
 static SymbolTable *create_child_scope(SymbolTable *parent_scope,
                                        char **parameters,
@@ -91,8 +92,26 @@ static bool is_relation_op(TokenType type);
 static char peek(Interpreter *interpret);
 static ASTNode *parse_compound(Interpreter *interpret);
 static void skip_eol(Interpreter *interpret);
-Value buildin_sin(Interpreter *interpret, Value *arguments,
-                  unsigned int arguments_count);
+static Value buildin_unary_math(char *func_name, Interpreter *interpret,
+                                Value *arguments, unsigned int arguments_count,
+                                double (*trigonomy_function)(double));
+static Value buildin_sin(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count);
+static Value buildin_asin(Interpreter *interpret, Value *arguments,
+                          unsigned int arguments_count);
+static Value buildin_cos(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count);
+static Value buildin_acos(Interpreter *interpret, Value *arguments,
+                          unsigned int arguments_count);
+static Value buildin_tan(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count);
+static Value buildin_atan(Interpreter *interpret, Value *arguments,
+                          unsigned int arguments_count);
+
+static Value buildin_sqrt(Interpreter *interpret, Value *arguments,
+                          unsigned int arguments_count);
+static Value buildin_floor(Interpreter *interpret, Value *arguments,
+                           unsigned int arguments_count);
 
 // Structure for math constants (to be in one place)
 typedef struct
@@ -121,11 +140,48 @@ typedef struct
     Value (*fn)(Interpreter *, Value *, unsigned int);
 } BuiltinFunctions;
 
-static const BuiltinFunctions BUILDIN_FUNCTIONS[] = {{
-    "sin",
-    1,
-    buildin_sin,
-}};
+static const BuiltinFunctions BUILDIN_FUNCTIONS[] = {
+    {
+        "sin",
+        1,
+        buildin_sin,
+    },
+    {
+        "asin",
+        1,
+        buildin_asin,
+    },
+    {
+        "cos",
+        1,
+        buildin_cos,
+    },
+    {
+        "acos",
+        1,
+        buildin_acos,
+    },
+    {
+        "tan",
+        1,
+        buildin_tan,
+    },
+    {
+        "atan",
+        1,
+        buildin_atan,
+    },
+    {
+        "sqrt",
+        1,
+        buildin_sqrt,
+    },
+    {
+        "floor",
+        1,
+        buildin_floor,
+    },
+};
 
 static const unsigned int NUM_BUILTIN_FUNCTIONS =
     sizeof(BUILDIN_FUNCTIONS) / sizeof(BUILDIN_FUNCTIONS[0]);
@@ -1552,6 +1608,15 @@ void analyze_tree(ASTNode *node, SymbolTable *symtab)
 // Put a new symbol in the table if it does not exist or is not  const
 static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
 {
+    // Check if the given name is a buildin function
+    if (is_buildin_function(name))
+    {
+        printf("Semantic Error: '%s' is a built-in function and cannot be "
+               "overwritten!\n",
+               name);
+        set_error_state_symtab(symtab);
+        return;
+    }
     // Check if the syymbol already exists
     for (unsigned int i = 0; i < symtab->count; i++)
     {
@@ -1603,6 +1668,15 @@ static void define_function(SymbolTable *symtab, const char *name,
                             unsigned int param_count, char **parameters,
                             ASTNode *body)
 {
+    // Check if the given name is a buildin function
+    if (is_buildin_function(name))
+    {
+        printf("Semantic Error: '%s' is a built-in function and cannot be "
+               "redeclared!\n",
+               name);
+        set_error_state_symtab(symtab);
+        return;
+    }
     // Check if the syymbol already exists
     for (unsigned int i = 0; i < symtab->count; i++)
     {
@@ -1710,7 +1784,7 @@ static bool lookup_symbol(SymbolTable *symtab, const char *name)
     return false;
 }
 
-// Check if a symbol is in the symbol table
+// Check if a function is in the symbol table
 static bool lookup_function(SymbolTable *symtab, const char *name,
                             unsigned int arguments_count)
 {
@@ -1753,6 +1827,19 @@ static bool lookup_function(SymbolTable *symtab, const char *name,
 
     printf("Semantic Error: Function '%s' is not defined!\n", name);
     symtab->error_found = true;
+    return false;
+}
+
+// Helper function to check if name is already defined in the buildin function
+static bool is_buildin_function(const char *name)
+{
+    for (unsigned int i = 0; i < NUM_BUILTIN_FUNCTIONS; i++)
+    {
+        if (strcmp(BUILDIN_FUNCTIONS[i].name, name) == 0)
+        {
+            return true;
+        }
+    }
     return false;
 }
 
@@ -2395,6 +2482,7 @@ static Value evaluate_function_call(ASTNode *node, Interpreter *interpret,
         return result;
     }
 }
+
 // Initialize the interpreter struct
 void init_interpreter(Interpreter *interpret)
 {
@@ -2674,23 +2762,24 @@ static void skip_eol(Interpreter *interpret)
     }
 }
 
-// Wrapper function to use c build in sin function
-Value buildin_sin(Interpreter *interpret, Value *arguments,
-                  unsigned int arguments_count)
+// Wrapper function to use c build in trigonomy function
+static Value buildin_unary_math(char *func_name, Interpreter *interpret,
+                                Value *arguments, unsigned int arguments_count,
+                                double (*trigonomy_function)(double))
 {
-    // Sin only takes one argument
     if (arguments_count != 1)
     {
-        printf("Runtime Error: Builtin sin takes 1 argument, got %d!\n",
-               arguments_count);
+        printf("Runtime Error: Builtin %s takes 1 argument, got %d!\n",
+               func_name, arguments_count);
         set_error_state_interpret(interpret);
         return (Value){VAL_INT, {.i_val = 0}};
     }
 
     if (arguments[0].type == VAL_BOOL)
     {
-        printf("Runtime Error: Builtin sin takes integeger argument, got "
-               "boolean!\n");
+        printf("Runtime Error: Builtin %s takes integeger argument, got "
+               "boolean!\n",
+               func_name);
         set_error_state_interpret(interpret);
         return (Value){VAL_INT, {.i_val = 0}};
     }
@@ -2705,5 +2794,68 @@ Value buildin_sin(Interpreter *interpret, Value *arguments,
         input = arguments[0].as.f_val;
     }
 
-    return (Value){VAL_FLOAT, {.f_val = sin(input)}};
+    return (Value){VAL_FLOAT, {.f_val = trigonomy_function(input)}};
+}
+
+// Wrapper function to use c build in sin function
+static Value buildin_sin(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count)
+{
+    return buildin_unary_math("sin", interpret, arguments, arguments_count,
+                              sin);
+}
+
+// Wrapper function to use c build in asin function
+static Value buildin_asin(Interpreter *interpret, Value *arguments,
+                          unsigned int arguments_count)
+{
+    return buildin_unary_math("asin", interpret, arguments, arguments_count,
+                              asin);
+}
+
+// Wrapper function to use c build in cos function
+static Value buildin_cos(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count)
+{
+    return buildin_unary_math("cos", interpret, arguments, arguments_count,
+                              cos);
+}
+
+// Wrapper function to use c build in acos function
+static Value buildin_acos(Interpreter *interpret, Value *arguments,
+                          unsigned int arguments_count)
+{
+    return buildin_unary_math("acos", interpret, arguments, arguments_count,
+                              acos);
+}
+// Wrapper function to use c build in tan function
+static Value buildin_tan(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count)
+{
+    return buildin_unary_math("tan", interpret, arguments, arguments_count,
+                              tan);
+}
+
+// Wrapper function to use c build in atan function
+static Value buildin_atan(Interpreter *interpret, Value *arguments,
+                          unsigned int arguments_count)
+{
+    return buildin_unary_math("atan", interpret, arguments, arguments_count,
+                              atan);
+}
+
+// Wrapper function to use c build in sqrt function
+static Value buildin_sqrt(Interpreter *interpret, Value *arguments,
+                          unsigned int arguments_count)
+{
+    return buildin_unary_math("sqrt", interpret, arguments, arguments_count,
+                              sqrt);
+}
+
+// Wrapper function to use c build in floor function
+static Value buildin_floor(Interpreter *interpret, Value *arguments,
+                           unsigned int arguments_count)
+{
+    return buildin_unary_math("floor", interpret, arguments, arguments_count,
+                              floor);
 }
