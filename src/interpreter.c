@@ -112,7 +112,17 @@ static Value buildin_sqrt(Interpreter *interpret, Value *arguments,
                           unsigned int arguments_count);
 static Value buildin_floor(Interpreter *interpret, Value *arguments,
                            unsigned int arguments_count);
+static Value buildin_abs(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count);
+static Value buildin_ceil(Interpreter *interpret, Value *arguments,
+                          unsigned int arguments_count);
+static Value buildin_log(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count);
+static Value buildin_ln(Interpreter *interpret, Value *arguments,
+                        unsigned int arguments_count);
 
+static Value buildin_pow(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count);
 // Structure for math constants (to be in one place)
 typedef struct
 {
@@ -180,6 +190,31 @@ static const BuiltinFunctions BUILDIN_FUNCTIONS[] = {
         "floor",
         1,
         buildin_floor,
+    },
+    {
+        "abs",
+        1,
+        buildin_abs,
+    },
+    {
+        "ceil",
+        1,
+        buildin_ceil,
+    },
+    {
+        "log",
+        1,
+        buildin_log,
+    },
+    {
+        "ln",
+        1,
+        buildin_ln,
+    },
+    {
+        "pow",
+        2,
+        buildin_pow,
     },
 };
 
@@ -2762,10 +2797,10 @@ static void skip_eol(Interpreter *interpret)
     }
 }
 
-// Wrapper function to use c build in trigonomy function
+// Wrapper function to use c build in math functions with one argument
 static Value buildin_unary_math(char *func_name, Interpreter *interpret,
                                 Value *arguments, unsigned int arguments_count,
-                                double (*trigonomy_function)(double))
+                                double (*unary_function)(double))
 {
     if (arguments_count != 1)
     {
@@ -2794,7 +2829,7 @@ static Value buildin_unary_math(char *func_name, Interpreter *interpret,
         input = arguments[0].as.f_val;
     }
 
-    return (Value){VAL_FLOAT, {.f_val = trigonomy_function(input)}};
+    return (Value){VAL_FLOAT, {.f_val = unary_function(input)}};
 }
 
 // Wrapper function to use c build in sin function
@@ -2858,4 +2893,111 @@ static Value buildin_floor(Interpreter *interpret, Value *arguments,
 {
     return buildin_unary_math("floor", interpret, arguments, arguments_count,
                               floor);
+}
+
+// Wrapper function to use c build in absolut function
+static Value buildin_abs(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count)
+{
+    return buildin_unary_math("abs", interpret, arguments, arguments_count,
+                              fabs);
+}
+
+// Wrapper function to use c build in ceiling function
+static Value buildin_ceil(Interpreter *interpret, Value *arguments,
+                          unsigned int arguments_count)
+{
+    return buildin_unary_math("ceil", interpret, arguments, arguments_count,
+                              ceil);
+}
+
+// Wrapper function to use c build in log10 function
+static Value buildin_log(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count)
+{
+    return buildin_unary_math("log", interpret, arguments, arguments_count,
+                              log10);
+}
+
+// Wrapper function to use c build in log (ln) function
+static Value buildin_ln(Interpreter *interpret, Value *arguments,
+                        unsigned int arguments_count)
+{
+    return buildin_unary_math("ln", interpret, arguments, arguments_count, log);
+}
+
+// Wrapper function to use c build in pow function
+static Value buildin_pow(Interpreter *interpret, Value *arguments,
+                         unsigned int arguments_count)
+{
+    if (arguments_count != 2)
+    {
+        printf("Runtime Error: Builtin pow takes 2 argument, got %d!\n",
+               arguments_count);
+        set_error_state_interpret(interpret);
+        return (Value){VAL_INT, {.i_val = 0}};
+    }
+
+    if (arguments[0].type == VAL_BOOL)
+    {
+        printf("Runtime Error: Builtin pow takes integeger argument, got "
+               "boolean!\n");
+        set_error_state_interpret(interpret);
+        return (Value){VAL_INT, {.i_val = 0}};
+    }
+
+    // Check if pow(double x, double y) or self implemented power
+    bool is_double_pow = false;
+
+    if (arguments[0].type == VAL_FLOAT || arguments[1].type == VAL_FLOAT)
+    {
+        is_double_pow = true;
+    }
+    else if (arguments[0].as.i_val < 0 || arguments[1].as.i_val < 0)
+    {
+        is_double_pow = true;
+    }
+
+    if (is_double_pow)
+    {
+        double base = 0.0;
+        double exponent = 0.0;
+        if (arguments[0].type == VAL_INT)
+        {
+            base = (double)arguments[0].as.i_val;
+        }
+        else
+        {
+            base = (double)arguments[0].as.f_val;
+        }
+
+        if (arguments[1].type == VAL_INT)
+        {
+            exponent = (double)arguments[1].as.i_val;
+        }
+        else
+        {
+            exponent = (double)arguments[1].as.f_val;
+        }
+
+        return (Value){VAL_FLOAT, {.f_val = pow(base, exponent)}};
+    }
+    else
+    {
+        // true long long power calculation
+        long long result = 1;
+        long long base = arguments[0].as.i_val;
+        long long exponent = arguments[1].as.i_val;
+        for (long long i = 0; i < exponent; i++)
+        {
+            if (SAFE_MUL(result, base, &result))
+            {
+                printf("Runtime Error: pow(%lld, %lld) overflows long long!\n",
+                       base, exponent);
+                set_error_state_interpret(interpret);
+                return (Value){VAL_INT, {.i_val = 0}};
+            }
+        }
+        return (Value){VAL_INT, {.i_val = result}};
+    }
 }
