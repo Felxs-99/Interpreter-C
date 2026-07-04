@@ -16,6 +16,9 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - **Recursion:** Runtime scope chain (`RuntimeScope` linked list) enables full recursive calls with isolated per-call state.
 - **Explicit Output:** `print()` statement for controlled output — file mode is silent by default.
 - **Interactive REPL:** CLI with readline history and smart `...` prompt for multi-line block input.
+- **Built-in Math Functions:** `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sqrt`, `floor`, `ceil`, `abs`, `ln`, `log`, `pow` — with type-aware `pow` using exact integer arithmetic for integer exponents and `double` fallback otherwise.
+- **Dynamic Identifiers:** Identifiers are heap-allocated with realloc growth — no length limit on variable or function names.
+- **Built-in Name Protection:** Semantic analysis rejects variable assignments or function definitions that shadow built-in names.
 
 ## 🛠 Project Roadmap
 - [x] Basic addition and subtraction (`1 + 1`, `-5 + 10`) — *Done 2026-03-05*
@@ -37,7 +40,8 @@ Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/ls
 - [x] Scoped symbol table (nested scopes via `enclosing_scope` pointer) — *Done 2026-06-29*
 - [x] Functions (`def` keyword) with local scope and `return()` — *Done 2026-06-29*
 - [x] Recursion via `RuntimeScope` call-frame chain — *Done 2026-06-29*
-- [ ] Built-in math functions like `sin()`, `cos()`
+- [x] Built-in math functions (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sqrt`, `floor`, `ceil`, `abs`, `ln`, `log`, `pow`) — *Done 2026-07-04*
+- [x] Dynamic identifier allocation — no length limit on names — *Done 2026-07-04*
 - [ ] Semantic Analysis: type checking in symbol table
 - [ ] Professional Error Reporting: line and column tracking for Clang-style diagnostics
 - [ ] Functions & The Call Stack: Stack of Activation Records for local scoping
