@@ -74,7 +74,7 @@ typedef enum
 typedef struct
 {
     Value value;
-    char name[NAME_LENGTH];
+    char *name;
     TokenType type;
 } Token;
 
@@ -130,7 +130,7 @@ typedef enum
 // Represents a declared variable or function
 typedef struct
 {
-    char name[NAME_LENGTH];
+    char *name;
     bool is_const;
     SymbolKind symbol_kind;
     union
@@ -157,7 +157,7 @@ typedef struct SymbolTable
 // Represents a runtime value in memory
 typedef struct
 {
-    char name[NAME_LENGTH];
+    char *name;
     Value value;
 } MemorySlot;
 

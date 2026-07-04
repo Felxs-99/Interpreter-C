@@ -1035,6 +1035,124 @@ UTEST(ReturnTests, return_recursive_factorial)
 
 /*
  * ####################
+ * #   MathBuiltins   #
+ * ####################
+ */
+
+UTEST(MathBuiltinTests, sin_value)
+{
+    TestResult result = calc("sin(0)", 6);
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 0.0, 1e-9);
+}
+
+UTEST(MathBuiltinTests, cos_value)
+{
+    TestResult result = calc("cos(0)", 6);
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 1.0, 1e-9);
+}
+
+UTEST(MathBuiltinTests, sqrt_value)
+{
+    TestResult result = calc("sqrt(9)", 7);
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 3.0, 1e-9);
+}
+
+UTEST(MathBuiltinTests, abs_negative)
+{
+    TestResult result = calc("abs(-5)", 7);
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 5.0, 1e-9);
+}
+
+UTEST(MathBuiltinTests, floor_value)
+{
+    TestResult result = calc("floor(2.9)", 10);
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 2.0, 1e-9);
+}
+
+UTEST(MathBuiltinTests, pow_int_path)
+{
+    TestResult result = calc("pow(2, 10)", 10);
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 1024);
+}
+
+UTEST(MathBuiltinTests, pow_float_path)
+{
+    TestResult result = calc("pow(2, 0.5)", 11);
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, sqrt(2.0), 1e-9);
+}
+
+UTEST(MathBuiltinTests, pow_negative_exponent_uses_float)
+{
+    TestResult result = calc("pow(2, -1)", 10);
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_FLOAT);
+    ASSERT_NEAR(result.answer.as.f_val, 0.5, 1e-9);
+}
+
+UTEST(MathBuiltinTests, builtin_name_cannot_be_overwritten)
+{
+    TestResult result = calc_script((const char *[]){"sin = 1"}, 1);
+    ASSERT_TRUE(result.error);
+}
+
+UTEST(MathBuiltinTests, builtin_name_cannot_be_redeclared)
+{
+    TestResult result =
+        calc_block("def sin() {\nreturn(1)\n}\nsin()");
+    ASSERT_TRUE(result.error);
+}
+
+/*
+ * ##########################
+ * #   DynamicIdentifiers   #
+ * ##########################
+ */
+
+UTEST(DynamicIdentifierTests, long_variable_name)
+{
+    TestResult result = calc_script(
+        (const char *[]){"averylongvariablename = 42",
+                         "averylongvariablename"},
+        2);
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 42);
+}
+
+UTEST(DynamicIdentifierTests, long_function_name)
+{
+    TestResult result =
+        calc_block("def averylongfunctionname() {\nreturn(99)\n}\naverylongfunctionname()");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 99);
+}
+
+UTEST(DynamicIdentifierTests, long_param_name)
+{
+    TestResult result =
+        calc_block("def foo(averylongparamname) {\nreturn(averylongparamname)\n}\nfoo(7)");
+    ASSERT_FALSE(result.error);
+    ASSERT_EQ((int)result.answer.type, VAL_INT);
+    ASSERT_EQ(result.answer.as.i_val, 7);
+}
+
+/*
+ * ####################
  * #   Negativ Tests  #
  * ####################
  */

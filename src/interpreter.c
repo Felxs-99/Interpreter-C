@@ -4,8 +4,10 @@
 #include <ctype.h>
 #include <limits.h>
 #include <math.h>
+#include <readline/history.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -414,7 +416,10 @@ void free_ast(ASTNode *node)
         return;
     free_ast(node->left); // Free children first (Post-order traversal)
     free_ast(node->right);
-
+    if (node->token.name != NULL)
+    {
+        free(node->token.name);
+    }
     switch (node->type)
     {
         case NODE_FUNC_DEF:
@@ -450,6 +455,8 @@ static ASTNode *clone_ast(ASTNode *node)
     }
     ASTNode *copied_node = (ASTNode *)malloc(sizeof(ASTNode));
     *copied_node = *node;
+    if (node->token.name)
+        copied_node->token.name = strdup(node->token.name);
     copied_node->left = clone_ast(node->left);
     copied_node->right = clone_ast(node->right);
 
@@ -493,6 +500,10 @@ static bool eat(TokenType token, Interpreter *interpret)
 {
     if (interpret->current_token.type == token)
     {
+        if (interpret->current_token.name != NULL)
+        {
+            free(interpret->current_token.name);
+        }
         get_next_token(interpret);
         return true;
     }
@@ -744,10 +755,12 @@ static ASTNode *parse_const(Interpreter *interpret)
     }
 
     Token id_token = interpret->current_token;
+    id_token.name = strdup(id_token.name);
     if (!eat(ID, interpret))
     {
         printf("Syntax Error: Expected variable name after 'const'.\n");
         set_error_state_interpret(interpret);
+        free(id_token.name);
         return NULL;
     }
 
@@ -1113,6 +1126,7 @@ static ASTNode *factor(Interpreter *interpret)
     }
     else if (token.type == ID)
     {
+        token.name = strdup(token.name);
         eat(ID, interpret);
         return parse_id_or_call(token, interpret);
     }
@@ -1136,6 +1150,8 @@ void get_next_token(Interpreter *interpret)
 {
     // Create an empty token
     Token token = {0};
+    token.name = NULL;
+
     char current_char = interpret->buffer[interpret->position];
 
     // Detect whitespaces and skip them, relies on the fact that buffer is 0
@@ -1334,32 +1350,45 @@ void get_next_token(Interpreter *interpret)
     if (isalpha(current_char))
     {
         int position = 0;
+        // Allocate name with the size of NAME_LENGTH in to heap
+        // tradeoff between capabillity to use variables with n char and realloc
+        // every time
+        token.name = malloc(sizeof(char) * NAME_LENGTH);
+        if (token.name == NULL)
+        {
+            printf("Runtime Error: Failed to allocate memory for variable "
+                   "name!\n");
+            set_error_state_interpret(interpret);
+            return;
+        }
+        int actual_size = NAME_LENGTH;
+
         token.name[position] = current_char;
         interpret->position++;
 
         while (isalpha(interpret->buffer[interpret->position]))
         {
             position++;
-            // Check for max allowed length - the \0
-            if (position >= (NAME_LENGTH - 1))
+            if (position > (actual_size - 1))
             {
-                printf("Syntax Error: Max length for variables are %d\n",
-                       (NAME_LENGTH - 1));
-                set_error_state_interpret(interpret);
-                return;
+                char *new_name =
+                    realloc(token.name, sizeof(char) * actual_size * 2);
+                if (new_name == NULL)
+                {
+                    printf(
+                        "Runtime Error: Failed to allocate memory for variable "
+                        "name!\n");
+                    free(token.name);
+                    set_error_state_interpret(interpret);
+                    return;
+                }
+                token.name = new_name;
+                actual_size = actual_size * 2;
             }
-
             token.name[position] = interpret->buffer[interpret->position];
             interpret->position++;
         }
 
-        if (position >= (NAME_LENGTH - 2))
-        {
-            printf("Syntax Error: Max length for variables are %d\n",
-                   (NAME_LENGTH - 1));
-            set_error_state_interpret(interpret);
-            return;
-        }
         // Add traling \0
         token.name[++position] = '\0';
         token.type = get_keyword_type(token.name);
@@ -1374,6 +1403,13 @@ void get_next_token(Interpreter *interpret)
         {
             token.value.type = VAL_BOOL;
             token.value.as.b_val = false;
+        }
+
+        // freeing for keywords like def
+        if (token.type != ID)
+        {
+            free(token.name);
+            token.name = NULL;
         }
         interpret->current_token = token;
         return;
@@ -1682,20 +1718,12 @@ static void define_symbol(SymbolTable *symtab, const char *name, bool is_const)
 
     unsigned int index = symtab->count;
 
-    if (strlen(name) < NAME_LENGTH)
-    {
-        strcpy(symtab->symbols[index].name, name);
-        symtab->symbols[index].is_const = is_const;
-        symtab->symbols[index].symbol_kind = KIND_VAR;
-        memset(&symtab->symbols[index].ext, 0,
-               sizeof(symtab->symbols[index].ext));
-        symtab->count++;
-    }
-    else
-    {
-        printf("Semantic Error: Name of variable too long!\n ");
-        set_error_state_symtab(symtab);
-    }
+    symtab->symbols[index].name = strdup(name);
+    symtab->symbols[index].is_const = is_const;
+    symtab->symbols[index].symbol_kind = KIND_VAR;
+    memset(&symtab->symbols[index].ext, 0,
+           sizeof(symtab->symbols[index].ext));
+    symtab->count++;
 }
 
 // Put a new function in the table if it does not exist or is not const
@@ -1744,26 +1772,18 @@ static void define_function(SymbolTable *symtab, const char *name,
 
     unsigned int index = symtab->count;
 
-    if (strlen(name) < NAME_LENGTH)
+    symtab->symbols[index].name = strdup(name);
+    symtab->symbols[index].symbol_kind = KIND_FUNC;
+    symtab->symbols[index].ext.func.params =
+        malloc(param_count * sizeof(char *));
+    for (unsigned int i = 0; i < param_count; i++)
     {
-        strcpy(symtab->symbols[index].name, name);
-        symtab->symbols[index].symbol_kind = KIND_FUNC;
-        symtab->symbols[index].ext.func.params =
-            malloc(param_count * sizeof(char *));
-        for (unsigned int i = 0; i < param_count; i++)
-        {
-            symtab->symbols[index].ext.func.params[i] = strdup(parameters[i]);
-        }
-        symtab->symbols[index].ext.func.params_count = param_count;
-        symtab->symbols[index].ext.func.body = clone_ast(body);
-        symtab->symbols[index].is_const = true;
-        symtab->count++;
+        symtab->symbols[index].ext.func.params[i] = strdup(parameters[i]);
     }
-    else
-    {
-        printf("Semantic Error: Name of variable too long!\n ");
-        set_error_state_symtab(symtab);
-    }
+    symtab->symbols[index].ext.func.params_count = param_count;
+    symtab->symbols[index].ext.func.body = clone_ast(body);
+    symtab->symbols[index].is_const = true;
+    symtab->count++;
 }
 
 // grow the Symbol Table, return true if successfull, false if not
@@ -1776,7 +1796,7 @@ static bool grow_symtab(SymbolTable *symtab)
         {
             symtab->capacity = 8;
         }
-
+        unsigned int old_capcity = symtab->capacity;
         symtab->capacity *= 2;
         Symbol *new_symbol = (Symbol *)realloc(
             symtab->symbols, symtab->capacity * sizeof(Symbol));
@@ -1789,6 +1809,11 @@ static bool grow_symtab(SymbolTable *symtab)
             return false;
         }
         symtab->symbols = new_symbol;
+        // Assign NULL to name
+        for (unsigned int i = old_capcity; i < symtab->capacity; i++)
+        {
+            symtab->symbols[i].name = NULL;
+        }
     }
     return true;
 }
@@ -1882,7 +1907,7 @@ static bool is_buildin_function(const char *name)
 void init_symtab(SymbolTable *symtab)
 {
     symtab->capacity = 8;
-    symtab->symbols = malloc(symtab->capacity * sizeof(Symbol));
+    symtab->symbols = calloc(symtab->capacity, sizeof(Symbol));
     symtab->count = 0;
     symtab->error_found = false;
     symtab->enclosing_scope = NULL;
@@ -1942,6 +1967,11 @@ static SymbolTable *create_child_scope(SymbolTable *parent_scope,
 // Free the allocated memory of the symbol table
 void free_symtab(SymbolTable *symtab)
 {
+    // Free every symbol name in a symbol
+    for (unsigned int i = 0; i < symtab->count; i++)
+    {
+        free(symtab->symbols[i].name);
+    }
     free(symtab->symbols);
     symtab->symbols = NULL;
     symtab->count = 0;
@@ -2556,7 +2586,7 @@ static RuntimeScope *init_scope(RuntimeScope *parent_scope)
     new_scope->memory_count = 0;
     new_scope->memory_capacity = 8;
 
-    new_scope->memory = malloc(new_scope->memory_capacity * sizeof(MemorySlot));
+    new_scope->memory = calloc(new_scope->memory_capacity, sizeof(MemorySlot));
 
     if (new_scope->memory == NULL)
     {
@@ -2570,6 +2600,10 @@ static RuntimeScope *init_scope(RuntimeScope *parent_scope)
 // Free scope memory
 static void free_scope(RuntimeScope *scope)
 {
+    for (unsigned int i = 0; i < scope->memory_count; i++)
+    {
+        free(scope->memory[i].name);
+    }
     free(scope->memory);
     free(scope);
 }
@@ -2630,6 +2664,7 @@ static void set_variable(Interpreter *interpret, const char *name, Value value,
         interpret->current_scope->memory_capacity)
     {
         // realloc with 0 is equal to free, what shouldn't happen here
+        unsigned int old_capcity = interpret->current_scope->memory_capacity;
         if (interpret->current_scope->memory_capacity == 0)
         {
             interpret->current_scope->memory_capacity = 8;
@@ -2647,19 +2682,17 @@ static void set_variable(Interpreter *interpret, const char *name, Value value,
             return;
         }
         interpret->current_scope->memory = new_memory;
+        // Null new memory name
+        for (unsigned int i = old_capcity;
+             i < interpret->current_scope->memory_capacity; i++)
+        {
+            interpret->current_scope->memory[i].name = NULL;
+        }
     }
     unsigned int index = interpret->current_scope->memory_count;
-    if (strlen(name) < NAME_LENGTH)
-    {
-        strcpy(interpret->current_scope->memory[index].name, name);
-        interpret->current_scope->memory[index].value = value;
-        interpret->current_scope->memory_count++;
-    }
-    else
-    {
-        printf("Runtime Error: Name of variable too long!\n ");
-        set_error_state_interpret(interpret);
-    }
+    interpret->current_scope->memory[index].name = strdup(name);
+    interpret->current_scope->memory[index].value = value;
+    interpret->current_scope->memory_count++;
 }
 
 // Check if a variable exists in the symbol table and if yes returns the
