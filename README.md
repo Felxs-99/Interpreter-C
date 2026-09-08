@@ -3,6 +3,7 @@
 A lightweight, handwritten interpreter built in C to explore the fundamentals of Lexical Analysis and Parsing. 
 
 Inspired by the [Let’s Build A Simple Interpreter](https://ruslanspivak.com/lsbasi-part1/) series.
+Tests, commit messages and documentation where created with the help of Claude Code.
 
 ## 🚀 Features
 - **Memory-Safe Tokenization:** Handwritten lexer featuring safe-state buffering to intercept integer bounds violations prior to evaluation.
